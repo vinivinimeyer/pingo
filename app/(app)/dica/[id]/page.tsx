@@ -11,10 +11,12 @@ import {
   MessageCircle,
   Bookmark,
   ChevronRight,
+  Info,
 } from 'lucide-react';
 import { BottomNav } from '@/components/app/bottom-nav';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Sheet } from '@/components/ui/sheet';
 
 const mockTip = {
   id: '1',
@@ -34,6 +36,13 @@ const mockTip = {
   comments: 12,
   saved: false,
   liked: false,
+  endereco: 'Rua Augusta, 123 - Vila Madalena, São Paulo',
+  horario: 'Seg-Sex: 8h-20h | Sáb-Dom: 9h-18h',
+  precoMedio: 'R$ 25-50',
+  telefone: '(11) 98765-4321',
+  website: 'https://cafepingo.com.br',
+  acessibilidade: ['Rampa de acesso', 'Banheiro adaptado'],
+  tags: ['café', 'brunch', 'vilamadalena', 'petfriendly'],
 };
 
 const mockRelatedTips = [
@@ -68,6 +77,7 @@ export default function DicaDetalhadaPage() {
   const [likes, setLikes] = useState(mockTip.likes);
   const [showFullDescription, setShowFullDescription] = useState(false);
   const [comment, setComment] = useState('');
+  const [showInfo, setShowInfo] = useState(false);
 
   const description = mockTip.description;
   const shouldTruncate = description.length > 300;
@@ -101,6 +111,14 @@ export default function DicaDetalhadaPage() {
               aria-label="Voltar"
             >
               <ArrowLeft className="h-5 w-5 text-primary-foreground" strokeWidth={1.5} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowInfo(true)}
+              className="p-2 rounded-full bg-background/80 backdrop-blur-md hover:bg-background transition-colors text-primary-foreground"
+              aria-label="Informações"
+            >
+              <Info className="h-5 w-5" strokeWidth={1.5} />
             </button>
             <button
               className="p-2 rounded-full bg-background/80 backdrop-blur-md hover:bg-background transition-colors"
@@ -279,6 +297,90 @@ export default function DicaDetalhadaPage() {
           </div>
         </div>
       </div>
+
+      {/* Sheet Informações gerais */}
+      <Sheet open={showInfo} onOpenChange={setShowInfo} side="bottom">
+        <div className="max-h-[80vh] overflow-y-auto p-6 pb-8">
+          <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-muted" />
+          <h3 className="text-lg font-bold text-foreground mb-4">Informações</h3>
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-1">
+                Endereço
+              </p>
+              <p className="text-sm text-foreground">{mockTip.endereco}</p>
+              <Link
+                href={`/mapa?lat=${mockTip.location.lat}&lng=${mockTip.location.lng}`}
+                className="text-xs text-accent mt-1 inline-block"
+              >
+                Ver no mapa
+              </Link>
+            </div>
+            <div>
+              <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-1">
+                Horário
+              </p>
+              <p className="text-sm text-foreground">{mockTip.horario}</p>
+            </div>
+            <div>
+              <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-1">
+                Preço médio
+              </p>
+              <p className="text-sm text-foreground">{mockTip.precoMedio}</p>
+            </div>
+            <div>
+              <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-1">
+                Contato
+              </p>
+              <p className="text-sm text-foreground">{mockTip.telefone}</p>
+              {mockTip.website && (
+                <a
+                  href={mockTip.website}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-accent mt-1 block"
+                >
+                  Visitar site
+                </a>
+              )}
+            </div>
+            {mockTip.acessibilidade && mockTip.acessibilidade.length > 0 && (
+              <div>
+                <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-1">
+                  Acessibilidade
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {mockTip.acessibilidade.map((item: string) => (
+                    <span
+                      key={item}
+                      className="rounded-full bg-accent/10 px-3 py-1 text-xs text-accent"
+                    >
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {mockTip.tags && mockTip.tags.length > 0 && (
+              <div>
+                <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-1">
+                  Tags
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {mockTip.tags.map((tag: string) => (
+                    <span
+                      key={tag}
+                      className="rounded-full border border-border px-3 py-1 text-xs text-foreground"
+                    >
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </Sheet>
 
       {/* Input de comentário sticky */}
       <div className="sticky bottom-20 left-0 right-0 bg-card border-t border-border px-4 py-3 z-30">

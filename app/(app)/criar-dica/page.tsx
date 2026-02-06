@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { X, Camera, MapPin, Check } from 'lucide-react';
+import { Suspense, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { X, Camera, MapPin } from 'lucide-react';
 import { BottomNav } from '@/components/app/bottom-nav';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,8 +23,12 @@ const categories = [
   'Compras',
 ];
 
-export default function CriarDicaPage() {
+const DICA_NOVA_CRIADA_KEY = 'dica-nova-criada';
+
+function CriarDicaPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnTo = searchParams.get('returnTo');
   const [images, setImages] = useState<string[]>([]);
   const [formData, setFormData] = useState({
     title: '',
@@ -83,7 +87,21 @@ export default function CriarDicaPage() {
     setIsLoading(true);
     try {
       await new Promise((resolve) => setTimeout(resolve, 1500));
-      router.push('/perfil?success=Dica publicada com sucesso!');
+      if (returnTo === 'catalogo') {
+        const novaDica = {
+          id: `nova-${Date.now()}`,
+          titulo: formData.title,
+          localizacao: formData.location,
+          image: images[0] || '/images/cafe1.jpg',
+          categoria: formData.category,
+        };
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(DICA_NOVA_CRIADA_KEY, JSON.stringify(novaDica));
+        }
+        router.push('/criar-guia/catalogo');
+      } else {
+        router.push('/perfil?success=Dica publicada com sucesso!');
+      }
     } catch (error) {
       console.error('Erro ao publicar:', error);
     } finally {
@@ -328,5 +346,13 @@ export default function CriarDicaPage() {
 
       <BottomNav />
     </main>
+  );
+}
+
+export default function CriarDicaPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background flex items-center justify-center">Carregando...</div>}>
+      <CriarDicaPageContent />
+    </Suspense>
   );
 }

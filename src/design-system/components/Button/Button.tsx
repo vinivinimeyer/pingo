@@ -1,5 +1,5 @@
 import React from 'react';
-import { colors, spacing, borderRadius, typography } from '../tokens';
+import { colors, spacing, borderRadius, typography } from '../../tokens';
 import './Button.css';
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {

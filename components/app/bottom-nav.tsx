@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Search, PlusCircle, Bookmark, User } from 'lucide-react';
+import { Home, Search, PlusCircle, Rss, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function BottomNav() {
@@ -29,10 +29,10 @@ export function BottomNav() {
       isCentral: true,
     },
     {
-      href: '/salvos',
-      label: 'Salvos',
-      icon: Bookmark,
-      key: 'salvos',
+      href: '/feed',
+      label: 'Feed',
+      icon: Rss,
+      key: 'feed',
     },
     {
       href: '/perfil',
