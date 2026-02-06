@@ -1,0 +1,124 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Core Palette */
+    --background: 100 14% 92%;
+    --foreground: 150 10% 15%;
+    --card: 100 12% 95%;
+    --card-foreground: 150 10% 15%;
+    --popover: 60 20% 98%;
+    --popover-foreground: 150 10% 15%;
+    --primary: 150 10% 15%;
+    --primary-foreground: 60 20% 98%;
+    --secondary: 40 30% 94%;
+    --secondary-foreground: 150 10% 15%;
+    --muted: 100 10% 89%;
+    --muted-foreground: 150 6% 45%;
+    --accent: 28 85% 65%;
+    --accent-foreground: 150 10% 15%;
+    --destructive: 10 70% 50%;
+    --destructive-foreground: 60 20% 98%;
+    --border: 100 8% 84%;
+    --input: 100 8% 84%;
+    --ring: 28 85% 65%;
+
+    /* Extended Palette */
+    --peach-light: 35 90% 88%;
+    --peach: 28 85% 72%;
+    --peach-deep: 20 80% 60%;
+    --sage-light: 100 15% 94%;
+    --sage: 100 12% 85%;
+    --sage-deep: 120 10% 72%;
+    --amber-glow: 40 90% 70%;
+
+    /* Border Radius */
+    --radius: 0.75rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-dm-sans), system-ui, -apple-system, sans-serif;
+  }
+}
+
+@layer utilities {
+  /* Gradientes */
+  .gradient-warm {
+    background: linear-gradient(
+      160deg,
+      hsl(var(--sage-light)) 0%,
+      hsl(var(--peach-light)) 40%,
+      hsl(var(--peach)) 70%,
+      hsl(var(--amber-glow)) 100%
+    );
+  }
+
+  .gradient-peach {
+    background: linear-gradient(
+      135deg,
+      hsl(var(--peach-light)) 0%,
+      hsl(var(--peach)) 50%,
+      hsl(var(--amber-glow)) 100%
+    );
+  }
+
+  .gradient-sage {
+    background: linear-gradient(
+      135deg,
+      hsl(var(--sage-light)) 0%,
+      hsl(var(--sage)) 50%,
+      hsl(var(--sage-deep)) 100%
+    );
+  }
+
+  .gradient-hero {
+    background: linear-gradient(
+      180deg,
+      hsl(var(--background)) 0%,
+      hsl(var(--peach-light)) 50%,
+      hsl(var(--peach)) 100%
+    );
+  }
+
+  .gradient-subtle {
+    background: linear-gradient(
+      135deg,
+      hsl(var(--background)) 0%,
+      hsl(var(--sage-light)) 50%,
+      hsl(var(--peach-light) / 0.5) 100%
+    );
+  }
+
+  /* Glow Effects */
+  .glow-peach {
+    box-shadow: 0 0 80px 40px hsl(var(--peach) / 0.3),
+                0 0 160px 80px hsl(var(--amber-glow) / 0.15);
+  }
+
+  .glow-sage {
+    box-shadow: 0 0 60px 30px hsl(var(--sage) / 0.3),
+                0 0 120px 60px hsl(var(--sage-deep) / 0.15);
+  }
+
+  /* Scrollbar Hide */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Safe Area (iOS) */
+  .safe-area-inset-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
