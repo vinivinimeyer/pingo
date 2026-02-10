@@ -6,6 +6,8 @@ import { X, Image as ImageIcon, MapPin } from 'lucide-react';
 import { BottomNav } from '@/components/app/bottom-nav';
 import { Input } from '@/components/ui/input';
 import { useUpload } from '@/lib/hooks/use-supabase';
+import { getCurrentUser } from '@/lib/current-user';
+import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 
 const GUIA_TEMP_KEY = 'guia-temp';
@@ -53,6 +55,7 @@ export default function CriarGuiaPage() {
   const [capaPreview, setCapaPreview] = useState<string | null>(null);
   const [capa, setCapa] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
+  const [salvandoRascunho, setSalvandoRascunho] = useState(false);
 
   useEffect(() => {
     const saved = loadGuiaTemp();
@@ -100,6 +103,45 @@ export default function CriarGuiaPage() {
   if (!categoriaValida) faltando.push('Tipo de guia');
   const tooltipDesabilitado = faltando.length > 0 ? `Faltam: ${faltando.join(', ')}` : '';
 
+  const handleSalvarRascunho = async () => {
+    if (!titulo.trim() || !descricao.trim()) return;
+
+    setSalvandoRascunho(true);
+    try {
+      let capaUrl: string | null = null;
+      if (capaFile) {
+        const { url, error } = await uploadImage(capaFile, 'guias');
+        if (error) throw new Error(error);
+        capaUrl = url;
+      } else if (capa) {
+        capaUrl = capa;
+      }
+
+      const usuario = await getCurrentUser();
+      if (!usuario) throw new Error('Usuário não encontrado');
+
+      const { error } = await supabase.from('guias').insert({
+        titulo: titulo.trim(),
+        descricao: descricao.trim(),
+        capa: capaUrl,
+        cidade: cidade.trim() || 'Não informado',
+        categoria: categoria || 'Outros',
+        autor_id: usuario.id,
+        status: 'rascunho',
+        curtidas: 0,
+        saves: 0,
+        shares: 0,
+      });
+
+      if (error) throw error;
+      router.push('/perfil?success=Rascunho de guia salvo!');
+    } catch (err: unknown) {
+      alert('Erro ao salvar rascunho: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setSalvandoRascunho(false);
+    }
+  };
+
   const handleAvançar = async () => {
     if (!isValid) return;
 
@@ -144,9 +186,10 @@ export default function CriarGuiaPage() {
   };
 
   return (
-    <main className="min-h-screen bg-background pb-20">
-      <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border px-4 py-4">
-        <div className="flex items-center justify-between">
+    <main className="min-h-screen bg-background pb-40">
+      {/* Header */}
+      <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
+        <div className="flex items-center justify-between px-4 py-4">
           <button
             type="button"
             onClick={handleFechar}
@@ -155,20 +198,15 @@ export default function CriarGuiaPage() {
           >
             <X className="h-6 w-6" strokeWidth={1.5} />
           </button>
-          <h1 className="text-lg font-semibold text-foreground">Criar Guia</h1>
-          <button
-            type="button"
-            onClick={handleAvançar}
-            disabled={!isValid || loading}
-            className="text-sm font-medium text-accent disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-          >
-            {loading ? '...' : 'Avançar'}
-          </button>
+          <h1 className="text-lg font-bold text-foreground">Novo guia</h1>
+          <div className="w-6" />
         </div>
       </header>
 
+      {/* Conteúdo com scroll */}
+      <div className="px-4 py-6 space-y-6">
       <form
-        className="px-4 py-6 space-y-6"
+        className="space-y-6"
         onSubmit={(e) => {
           e.preventDefault();
           handleAvançar();
@@ -312,21 +350,38 @@ export default function CriarGuiaPage() {
           )}
         </div>
 
-        <button
-          type="submit"
-          disabled={!isValid}
-          title={tooltipDesabilitado}
-          className="w-full rounded-full gradient-peach px-6 py-4 text-sm font-medium text-primary hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Adicionar Dicas
-        </button>
-        {!isValid && tooltipDesabilitado && (
-          <p className="text-xs text-muted-foreground text-center mt-2" role="status">
-            {tooltipDesabilitado}
-          </p>
-        )}
       </form>
 
+      {!isValid && tooltipDesabilitado && (
+        <p className="text-xs text-muted-foreground text-center mt-2" role="status">
+          {tooltipDesabilitado}
+        </p>
+      )}
+      </div>
+
+      {/* Botões de ação - fixos acima do BottomNav */}
+      <div className="fixed bottom-20 left-0 right-0 z-50 bg-background border-t border-border p-4">
+        <div className="flex gap-3 max-w-xl mx-auto">
+          <button
+            type="button"
+            onClick={handleSalvarRascunho}
+            disabled={!titulo.trim() || !descricao.trim() || salvandoRascunho}
+            className="flex-1 rounded-full border border-border bg-card px-6 py-3 text-sm font-medium disabled:opacity-50 hover:bg-muted transition-colors"
+          >
+            {salvandoRascunho ? 'Salvando...' : 'Salvar Rascunho'}
+          </button>
+          <button
+            type="button"
+            onClick={handleAvançar}
+            disabled={!titulo.trim() || !descricao.trim() || !cidade.trim() || !categoria || loading}
+            className="flex-1 rounded-full gradient-peach px-6 py-3 text-sm font-medium text-primary disabled:opacity-50"
+          >
+            {loading ? '...' : 'Adicionar Dicas'}
+          </button>
+        </div>
+      </div>
+
+      {/* BottomNav - fixo embaixo */}
       <BottomNav />
     </main>
   );

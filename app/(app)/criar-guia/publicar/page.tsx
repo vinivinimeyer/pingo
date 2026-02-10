@@ -57,11 +57,40 @@ export default function PublicarGuiaPage() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [publicando, setPublicando] = useState(false);
   const [guiaCriadoId, setGuiaCriadoId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setGuia(loadGuiaTemp());
-    setDicaIds(loadDicasSelecionadas());
-  }, []);
+    const temp = typeof window !== 'undefined' ? localStorage.getItem(GUIA_TEMP_KEY) : null;
+    const dicasRaw = typeof window !== 'undefined' ? localStorage.getItem(DICAS_SELECIONADAS_KEY) : null;
+
+    if (!temp || !dicasRaw) {
+      setTimeout(() => {
+        router.replace('/criar-guia');
+      }, 0);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(temp) as Partial<GuiaTemp>;
+      const parsedDicas = JSON.parse(dicasRaw) as string[];
+      if (!parsed?.titulo) {
+        setTimeout(() => {
+          router.replace('/criar-guia');
+        }, 0);
+      } else {
+        setGuia(parsed);
+        setDicaIds(parsedDicas);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar dados:', err);
+      setTimeout(() => {
+        router.replace('/criar-guia');
+      }, 0);
+    } finally {
+      setLoading(false);
+    }
+  }, [router]);
 
   const dicaMap = new Map(
     dicas.map((d) => [
@@ -111,6 +140,7 @@ export default function PublicarGuiaPage() {
           cidade: guiaTemp.cidade,
           categoria: guiaTemp.categoria,
           autor_id: usuario.id,
+          status: 'publicado',
           curtidas: 0,
           saves: 0,
           shares: 0,
@@ -156,8 +186,18 @@ export default function PublicarGuiaPage() {
     router.push('/criar-guia');
   };
 
-  if (!guia.titulo && typeof window !== 'undefined') {
-    router.replace('/criar-guia');
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-sm text-muted-foreground">Carregando...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!guia.titulo) {
     return null;
   }
 
@@ -287,27 +327,42 @@ export default function PublicarGuiaPage() {
         </div>
       </div>
 
-      {showSuccess && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/50 backdrop-blur-sm p-4">
-          <div className="rounded-2xl bg-card border border-border p-6 max-w-sm w-full shadow-xl text-center space-y-4">
-            <p className="text-2xl">Guia publicado! 🎉</p>
-            <p className="text-sm text-muted-foreground">
-              Seu guia está disponível para outros viajantes
+      {showSuccess && guiaCriadoId && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-foreground/60 backdrop-blur-sm">
+          <div className="mx-4 max-w-sm w-full rounded-3xl bg-card p-8 shadow-2xl">
+            <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-accent/10">
+              <svg
+                className="h-12 w-12 text-accent"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+            </div>
+            <h3 className="text-center text-xl font-bold mb-2">Guia Publicado!</h3>
+            <p className="text-center text-sm text-muted-foreground mb-6">
+              Seu guia com {dicasOrdenadas.length} dicas já está disponível
             </p>
-            <div className="flex gap-3 pt-2">
+            <div className="space-y-3">
               <button
                 type="button"
                 onClick={handleVerGuia}
-                className="flex-1 rounded-full gradient-peach px-4 py-3 text-sm font-medium text-primary"
+                className="w-full rounded-full gradient-peach px-6 py-3 text-sm font-medium text-primary"
               >
                 Ver Guia
               </button>
               <button
                 type="button"
                 onClick={handleCriarOutro}
-                className="flex-1 rounded-full border border-border bg-card px-4 py-3 text-sm font-medium hover:bg-muted transition-colors"
+                className="w-full rounded-full border border-border bg-card px-6 py-3 text-sm font-medium hover:bg-muted"
               >
-                Criar Outro
+                Criar Outro Guia
               </button>
             </div>
           </div>

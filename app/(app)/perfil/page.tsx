@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Menu, Pencil, MapPin, Star } from 'lucide-react';
 import { BottomNav } from '@/components/app/bottom-nav';
@@ -15,8 +16,15 @@ import { cn } from '@/lib/utils';
 import type { DicaCardDica } from '@/components/app/dica-card';
 import type { GuiaCardGuia } from '@/components/app/guia-card';
 
-type TabType = 'guias' | 'dicas' | 'salvos';
+type TabType = 'guias' | 'dicas' | 'rascunhos' | 'salvos';
 type SalvosSubTab = 'dicas' | 'guias';
+
+type RascunhoItem = {
+  id: string;
+  titulo: string;
+  created_at: string;
+  tipo: 'dica' | 'guia';
+};
 
 function toDicaCard(d: { id: string; titulo: string; imagens: string[]; localizacao: string; categoria: string; curtidas?: number }): DicaCardDica {
   return {
@@ -46,6 +54,7 @@ function toGuiaCard(
 }
 
 export default function PerfilPage() {
+  const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const [tab, setTab] = useState<TabType>('guias');
   const [salvosSubTab, setSalvosSubTab] = useState<SalvosSubTab>('dicas');
@@ -53,6 +62,7 @@ export default function PerfilPage() {
   const [seguidores, setSeguidores] = useState(0);
   const [seguindo, setSeguindo] = useState(0);
   const [guiaDicaCounts, setGuiaDicaCounts] = useState<Record<string, number>>({});
+  const [rascunhos, setRascunhos] = useState<RascunhoItem[]>([]);
 
   const { usuario, loading, error, refetch } = useCurrentUser();
   const { dicas: todasDicas } = useDicas();
@@ -65,8 +75,49 @@ export default function PerfilPage() {
     if (usuario) {
       fetchDicasSalvas();
       fetchStats();
+      fetchRascunhos();
     }
   }, [usuario]);
+
+  async function fetchRascunhos() {
+    if (!usuario) return;
+    try {
+      const { data: dicasRascunho } = await supabase
+        .from('dicas')
+        .select('id, titulo, created_at')
+        .eq('autor_id', usuario.id)
+        .eq('status', 'rascunho')
+        .order('created_at', { ascending: false });
+
+      const { data: guiasRascunho } = await supabase
+        .from('guias')
+        .select('id, titulo, created_at')
+        .eq('autor_id', usuario.id)
+        .eq('status', 'rascunho')
+        .order('created_at', { ascending: false });
+
+      const todos: RascunhoItem[] = [
+        ...(dicasRascunho || []).map((d) => ({ ...d, tipo: 'dica' as const })),
+        ...(guiasRascunho || []).map((g) => ({ ...g, tipo: 'guia' as const })),
+      ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      setRascunhos(todos);
+    } catch (err) {
+      console.error('Erro ao buscar rascunhos:', err);
+    }
+  }
+
+  async function handleDeletarRascunho(id: string, tipo: 'dica' | 'guia') {
+    if (!confirm('Deseja deletar este rascunho?')) return;
+    try {
+      const tabela = tipo === 'dica' ? 'dicas' : 'guias';
+      const { error } = await supabase.from(tabela).delete().eq('id', id);
+      if (error) throw error;
+      setRascunhos((prev) => prev.filter((r) => r.id !== id));
+    } catch {
+      alert('Erro ao deletar rascunho');
+    }
+  }
 
   async function fetchDicasSalvas() {
     if (!usuario) return;
@@ -254,14 +305,14 @@ export default function PerfilPage() {
           </div>
         )}
 
-        <div className="flex gap-2 border-b border-border">
-          {(['guias', 'dicas', 'salvos'] as const).map((t) => (
+        <div className="flex gap-2 border-b border-border overflow-x-auto scrollbar-hide">
+          {(['guias', 'dicas', 'rascunhos', 'salvos'] as const).map((t) => (
             <button
               key={t}
               type="button"
               onClick={() => setTab(t)}
               className={cn(
-                'pb-3 px-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+                'pb-3 px-2 text-sm font-medium border-b-2 -mb-px transition-colors shrink-0',
                 tab === t
                   ? 'border-primary text-foreground'
                   : 'border-transparent text-muted-foreground'
@@ -269,6 +320,7 @@ export default function PerfilPage() {
             >
               {t === 'guias' && 'Guias'}
               {t === 'dicas' && 'Dicas'}
+              {t === 'rascunhos' && 'Rascunhos'}
               {t === 'salvos' && 'Salvos'}
             </button>
           ))}
@@ -304,6 +356,53 @@ export default function PerfilPage() {
             ) : (
               minhasDicas.map((dica) => (
                 <DicaCard key={dica.id} dica={toDicaCard(dica)} variant="grid" />
+              ))
+            )}
+          </div>
+        )}
+
+        {tab === 'rascunhos' && (
+          <div className="px-4 pb-6 pt-4 space-y-3">
+            {rascunhos.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-sm text-muted-foreground">Nenhum rascunho</p>
+              </div>
+            ) : (
+              rascunhos.map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-2xl border border-border bg-card p-4 flex items-center justify-between gap-3"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold mb-1 truncate">{item.titulo}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {item.tipo === 'dica' ? '📍 Dica' : '📚 Guia'} • Salvo em{' '}
+                      {new Date(item.created_at).toLocaleDateString('pt-BR')}
+                    </p>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (item.tipo === 'dica') {
+                          router.push(`/criar-dica?edit=${item.id}`);
+                        } else {
+                          router.push(`/criar-guia?edit=${item.id}`);
+                        }
+                      }}
+                      className="rounded-full border border-border bg-card px-4 py-2 text-xs font-medium hover:bg-muted"
+                    >
+                      Continuar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeletarRascunho(item.id, item.tipo)}
+                      className="rounded-full border border-destructive px-4 py-2 text-xs font-medium text-destructive hover:bg-destructive/10"
+                    >
+                      Deletar
+                    </button>
+                  </div>
+                </div>
               ))
             )}
           </div>

@@ -18,6 +18,7 @@ export function useDicas() {
       const { data, error: err } = await supabase
         .from('dicas')
         .select('*, autor:usuarios(*)')
+        .eq('status', 'publicado')
         .order('created_at', { ascending: false });
 
       if (err) throw err;
@@ -84,6 +85,7 @@ export function useGuias() {
       const { data, error: err } = await supabase
         .from('guias')
         .select('*, autor:usuarios(*)')
+        .eq('status', 'publicado')
         .order('created_at', { ascending: false });
 
       if (err) throw err;

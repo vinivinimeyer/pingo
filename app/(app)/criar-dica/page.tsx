@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { X, Camera, MapPin } from 'lucide-react';
 import { BottomNav } from '@/components/app/bottom-nav';
@@ -32,6 +32,7 @@ function CriarDicaPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const returnTo = searchParams.get('returnTo');
+  const action = searchParams?.get('action');
   const { uploading, progress, uploadMultiple } = useUpload();
   const [imagens, setImagens] = useState<File[]>([]);
   const [imagensPreviews, setImagensPreviews] = useState<string[]>([]);
@@ -50,6 +51,9 @@ function CriarDicaPageContent() {
   }>({});
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [salvandoRascunho, setSalvandoRascunho] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [dicaPublicada, setDicaPublicada] = useState<{ id: string } | null>(null);
 
   const hasChanges =
     imagens.length > 0 ||
@@ -57,6 +61,18 @@ function CriarDicaPageContent() {
     formData.description ||
     formData.location ||
     formData.category;
+
+  const titulo = formData.title.trim();
+  const descricao = formData.description.trim();
+  const categoria = formData.category;
+  const localizacao = formData.location.trim();
+  const podeContinuar =
+    titulo.length >= 5 &&
+    descricao.length >= 20 &&
+    !!categoria &&
+    !!localizacao &&
+    imagens.length > 0;
+  const podeRascunho = titulo.length > 0 && descricao.length > 0;
 
   function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || []);
@@ -75,6 +91,142 @@ function CriarDicaPageContent() {
   function removerImagem(index: number) {
     setImagens((prev) => prev.filter((_, i) => i !== index));
     setImagensPreviews((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  const publishTriggered = useRef(false);
+  useEffect(() => {
+    if (action === 'publish' && !publishTriggered.current) {
+      publishTriggered.current = true;
+      handlePublicar();
+    }
+  }, [action]);
+
+  async function handlePublicar() {
+    setIsLoading(true);
+    try {
+      let urls: string[];
+      let insertTitulo = titulo;
+      let insertDescricao = descricao;
+      let insertCategoria = categoria || 'Outros';
+      let insertLocalizacao = localizacao || 'Não informado';
+
+      const pendingRaw = typeof window !== 'undefined' ? localStorage.getItem('dica-publish-pending') : null;
+      if (pendingRaw) {
+        const parsed = JSON.parse(pendingRaw) as { titulo?: string; descricao?: string; categoria?: string; localizacao?: string; imagensBase64?: string[] };
+        insertTitulo = parsed.titulo || titulo;
+        insertDescricao = parsed.descricao || descricao;
+        insertCategoria = parsed.categoria || 'Outros';
+        insertLocalizacao = parsed.localizacao || 'Não informado';
+        const files: File[] = await Promise.all(
+          (parsed.imagensBase64 || []).map(async (dataUrl: string, i: number) => {
+            const res = await fetch(dataUrl);
+            const blob = await res.blob();
+            return new File([blob], `img-${i}.jpg`, { type: blob.type || 'image/jpeg' });
+          })
+        );
+        const result = await uploadMultiple(files, 'dicas');
+        if (result.error) throw new Error(result.error);
+        urls = result.urls;
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('dica-publish-pending');
+          localStorage.removeItem('dica-temp');
+        }
+      } else {
+        const result = await uploadMultiple(imagens, 'dicas');
+        if (result.error) throw new Error(result.error);
+        urls = result.urls;
+      }
+
+      const usuario = await getCurrentUser();
+      if (!usuario) throw new Error('Usuário não encontrado');
+
+      const { data, error } = await supabase
+        .from('dicas')
+        .insert({
+          titulo: insertTitulo || formData.title.trim(),
+          descricao: insertDescricao || formData.description.trim(),
+          imagens: urls,
+          categoria: insertCategoria,
+          localizacao: insertLocalizacao,
+          autor_id: usuario.id,
+          status: 'publicado',
+          curtidas: 0,
+          comentarios: 0,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      if (returnTo === 'catalogo') {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(DICA_NOVA_CRIADA_KEY, JSON.stringify(data));
+        }
+        router.push('/criar-guia/catalogo');
+        return;
+      }
+
+      if (typeof window !== 'undefined') localStorage.removeItem('dica-temp');
+      setDicaPublicada(data);
+      setShowSuccessModal(true);
+    } catch (err: unknown) {
+      alert('Erro ao publicar: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleSalvarRascunho() {
+    if (!titulo || !descricao) return;
+    setSalvandoRascunho(true);
+    try {
+      const { urls, error: uploadError } = await uploadMultiple(imagens, 'dicas');
+      if (uploadError) throw new Error(uploadError);
+
+      const usuario = await getCurrentUser();
+      if (!usuario) throw new Error('Usuário não encontrado');
+
+      const { error } = await supabase.from('dicas').insert({
+        titulo: titulo || 'Sem título',
+        descricao,
+        imagens: urls.length > 0 ? urls : [''],
+        categoria: categoria || 'Outros',
+        localizacao: localizacao || 'Não informado',
+        autor_id: usuario.id,
+        status: 'rascunho',
+        curtidas: 0,
+        comentarios: 0,
+      });
+
+      if (error) throw error;
+      router.push('/perfil?success=Rascunho salvo!');
+    } catch (err: unknown) {
+      alert('Erro ao salvar rascunho: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setSalvandoRascunho(false);
+    }
+  }
+
+  function handleContinuar() {
+    if (!podeContinuar) return;
+    const payload = {
+      titulo,
+      descricao,
+      categoria,
+      localizacao,
+      imagensPreviews: imagensPreviews,
+    };
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('dica-temp', JSON.stringify(payload));
+      localStorage.setItem('dica-publish-pending', JSON.stringify({
+        titulo,
+        descricao,
+        categoria,
+        localizacao,
+        imagensBase64: imagensPreviews,
+      }));
+    }
+    router.push('/criar-dica/preview');
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -102,44 +254,7 @@ function CriarDicaPageContent() {
       return;
     }
 
-    setIsLoading(true);
-    try {
-      const { urls, error: uploadError } = await uploadMultiple(imagens, 'dicas');
-      if (uploadError) throw new Error(uploadError);
-
-      const usuario = await getCurrentUser();
-      if (!usuario) throw new Error('Usuário não encontrado');
-
-      const { data, error } = await supabase
-        .from('dicas')
-        .insert({
-          titulo: formData.title.trim(),
-          descricao: formData.description.trim(),
-          imagens: urls,
-          categoria: formData.category,
-          localizacao: formData.location.trim(),
-          autor_id: usuario.id,
-          curtidas: 0,
-          comentarios: 0,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      if (returnTo === 'catalogo') {
-        if (typeof window !== 'undefined') {
-          localStorage.setItem(DICA_NOVA_CRIADA_KEY, JSON.stringify(data));
-        }
-        router.push('/criar-guia/catalogo');
-      } else {
-        router.push('/perfil?success=Dica publicada com sucesso!');
-      }
-    } catch (err: unknown) {
-      alert('Erro ao publicar dica: ' + (err instanceof Error ? err.message : String(err)));
-    } finally {
-      setIsLoading(false);
-    }
+    handleContinuar();
   };
 
   const handleClose = () => {
@@ -156,29 +271,26 @@ function CriarDicaPageContent() {
   };
 
   return (
-    <main className="min-h-screen bg-background pb-20">
-      {/* Header fixo */}
-      <div className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border px-4 py-4">
-        <div className="flex items-center justify-between max-w-2xl mx-auto">
+    <main className="min-h-screen bg-background pb-40">
+      {/* Header */}
+      <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
+        <div className="flex items-center justify-between px-4 py-4">
           <button
+            type="button"
             onClick={handleClose}
             className="p-2 hover:bg-muted rounded-lg transition-colors"
             aria-label="Fechar"
           >
             <X className="h-5 w-5" strokeWidth={1.5} />
           </button>
-          <h1 className="text-xl font-bold tracking-tight text-primary">Nova dica</h1>
-          <button
-            onClick={handleSubmit}
-            disabled={isLoading || !hasChanges}
-            className="text-sm font-semibold text-accent disabled:text-muted-foreground disabled:opacity-50 transition-colors"
-          >
-            Publicar
-          </button>
+          <h1 className="text-lg font-bold text-foreground">Nova dica</h1>
+          <div className="w-6" />
         </div>
-      </div>
+      </header>
 
-      <form onSubmit={handleSubmit} className="px-4 py-6 space-y-6 max-w-2xl mx-auto">
+      {/* Conteúdo com scroll */}
+      <div className="px-4 py-6 space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto">
         {/* Upload de imagens */}
         <div>
           <label className="block text-sm font-medium text-primary mb-2">Imagens</label>
@@ -331,29 +443,81 @@ function CriarDicaPageContent() {
           )}
         </div>
 
-        {/* Botões finais */}
-        <div className="grid grid-cols-2 gap-3 pt-4">
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => {
-              localStorage.setItem('dica-rascunho', JSON.stringify(formData));
-              router.push('/perfil');
-            }}
-            disabled={isLoading}
-          >
-            Salvar rascunho
-          </Button>
-          <Button
-            type="submit"
-            variant="gradient"
-            disabled={isLoading}
-            isLoading={isLoading}
-          >
-            Publicar
-          </Button>
-        </div>
       </form>
+      </div>
+
+      {/* Botões de ação - fixos acima do BottomNav */}
+      <div className="fixed bottom-20 left-0 right-0 z-50 bg-background border-t border-border p-4">
+        <div className="flex gap-3 max-w-xl mx-auto">
+          <button
+            type="button"
+            onClick={handleSalvarRascunho}
+            disabled={!titulo || !descricao || salvandoRascunho}
+            className="flex-1 rounded-full border border-border bg-card px-6 py-3 text-sm font-medium disabled:opacity-50 hover:bg-muted transition-colors"
+          >
+            {salvandoRascunho ? 'Salvando...' : 'Salvar Rascunho'}
+          </button>
+          <button
+            type="button"
+            onClick={handleContinuar}
+            disabled={!titulo || !descricao || !categoria || !localizacao || imagens.length === 0}
+            className="flex-1 rounded-full gradient-peach px-6 py-3 text-sm font-medium text-primary disabled:opacity-50"
+          >
+            Continuar
+          </button>
+        </div>
+      </div>
+
+      {/* BottomNav - fixo embaixo */}
+
+      {/* Modal de sucesso */}
+      {showSuccessModal && dicaPublicada && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-foreground/60 backdrop-blur-sm">
+          <div className="mx-4 max-w-sm w-full rounded-3xl bg-card p-8 shadow-2xl">
+            <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-accent/10">
+              <svg
+                className="h-12 w-12 text-accent"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+            </div>
+            <h3 className="text-center text-xl font-bold mb-2">Dica Publicada!</h3>
+            <p className="text-center text-sm text-muted-foreground mb-6">
+              Sua dica já está disponível no feed
+            </p>
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={() => router.push(`/dica/${dicaPublicada.id}`)}
+                className="w-full rounded-full gradient-peach px-6 py-3 text-sm font-medium text-primary"
+              >
+                Ver Dica
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSuccessModal(false);
+                  setDicaPublicada(null);
+                  setFormData({ title: '', description: '', location: '', category: '' });
+                  setImagens([]);
+                  setImagensPreviews([]);
+                }}
+                className="w-full rounded-full border border-border bg-card px-6 py-3 text-sm font-medium hover:bg-muted"
+              >
+                Criar Outra Dica
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de confirmação */}
       <Sheet open={showConfirmDialog} onOpenChange={setShowConfirmDialog} side="bottom">

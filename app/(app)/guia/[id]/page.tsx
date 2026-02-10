@@ -1,325 +1,325 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter, useParams } from 'next/navigation';
-import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { ArrowLeft, Share, Bookmark, MapPin, ChevronRight, ChevronLeft } from 'lucide-react';
+import {
+  ArrowLeft,
+  Share2,
+  Bookmark,
+  ChevronLeft,
+  ChevronRight,
+  MapPin,
+  BookOpen,
+} from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 import { BottomNav } from '@/components/app/bottom-nav';
-import { cn } from '@/lib/utils';
+import { useCurrentUser } from '@/lib/current-user';
 
-const mockGuia = {
-  id: '1',
-  titulo: 'Roteiro 3 dias em São Paulo',
-  descricao:
-    'Os melhores lugares para quem tem pouco tempo na cidade. Do centro histórico à Vila Madalena, passando por museus, bares e restaurantes que não podem ficar de fora do seu roteiro. Ideal para um fim de semana prolongado ou feriado.',
-  capa: '/images/guia1.jpg',
-  cidade: 'São Paulo, SP',
-  categoria: 'Roteiro',
-  autor: {
-    id: '1',
-    nome: 'Marina Silva',
-    avatar: '/avatars/marina.jpg',
-  },
-  dicas: [
-    {
-      id: '1',
-      titulo: 'Café da Manhã Perfeito',
-      descricao: 'O melhor café da Vila Madalena.',
-      imagem: '/images/cafe1.jpg',
-      imagens: ['/images/cafe1.jpg', '/images/hero2.jpg'],
-      localizacao: 'Vila Madalena, SP',
-      categoria: 'Restaurantes',
-    },
-    {
-      id: '2',
-      titulo: 'Padaria Artesanal',
-      descricao: 'Pães e doces incríveis.',
-      imagem: '/images/padaria.jpg',
-      imagens: ['/images/padaria.jpg'],
-      localizacao: 'Pinheiros, SP',
-      categoria: 'Restaurantes',
-    },
-    {
-      id: '3',
-      titulo: 'Vista Panorâmica',
-      descricao: 'Mirante com vista 360°.',
-      imagem: '/images/hero1.jpg',
-      imagens: ['/images/hero1.jpg', '/images/guia1.jpg'],
-      localizacao: 'Centro, SP',
-      categoria: 'Cultura',
-    },
-  ],
-  stats: { dicas: 3, saves: 450, shares: 120 },
-  saved: false,
+type GuiaRow = {
+  id: string;
+  titulo: string;
+  descricao: string;
+  capa?: string | null;
+  cidade: string;
+  categoria: string;
+  curtidas?: number;
+  saves?: number;
+  shares?: number;
+  autor?: { id: string; nome: string; username: string; avatar?: string } | { id: string; nome: string; username: string; avatar?: string }[];
 };
 
-export default function GuiaSelecionadoPage() {
-  const todasImagens = [
-    mockGuia.capa,
-    ...mockGuia.dicas.flatMap((d) =>
-      'imagens' in d && Array.isArray(d.imagens) ? d.imagens : [d.imagem]
-    ),
-  ];
+type DicaRow = {
+  id: string;
+  titulo: string;
+  descricao?: string;
+  localizacao?: string;
+  imagens?: string[] | null;
+};
+
+export default function GuiaPage() {
+  const params = useParams();
   const router = useRouter();
-  const [saved, setSaved] = useState(mockGuia.saved);
-  const [descExpanded, setDescExpanded] = useState(false);
+  const guiaId = (params?.id as string) ?? '';
+
+  const { usuario } = useCurrentUser();
+  const [salvo, setSalvo] = useState(false);
+
+  const [guia, setGuia] = useState<GuiaRow | null>(null);
+  const [dicas, setDicas] = useState<DicaRow[]>([]);
+  const [todasImagens, setTodasImagens] = useState<string[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const DESC_LIMIT = 200;
-  const descLong = mockGuia.descricao.length > DESC_LIMIT;
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (guiaId) {
+      fetchGuia();
+    }
+  }, [guiaId]);
+
+  async function fetchGuia() {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const { data: guiaData, error: guiaError } = await supabase
+        .from('guias')
+        .select('*, autor:usuarios(*)')
+        .eq('id', guiaId)
+        .single();
+
+      if (guiaError) throw guiaError;
+
+      const guiaNormalized = guiaData as GuiaRow;
+      const autor = Array.isArray(guiaNormalized.autor)
+        ? guiaNormalized.autor[0]
+        : guiaNormalized.autor;
+      setGuia({ ...guiaNormalized, autor: autor ?? undefined });
+
+      const { data: guiasDicasData, error: guiasDicasError } = await supabase
+        .from('guias_dicas')
+        .select('dica_id, ordem, dica:dicas(*)')
+        .eq('guia_id', guiaId)
+        .order('ordem', { ascending: true });
+
+      if (guiasDicasError) throw guiasDicasError;
+
+      type Row = { dica?: DicaRow | DicaRow[] | null };
+      const dicasOrdenadas: DicaRow[] = (guiasDicasData ?? [])
+        .map((item: Row) => {
+          const d = item.dica;
+          return Array.isArray(d) ? d[0] : d;
+        })
+        .filter((d): d is DicaRow => Boolean(d));
+
+      setDicas(dicasOrdenadas);
+
+      const imagens: string[] = [];
+      if (guiaNormalized.capa) imagens.push(guiaNormalized.capa);
+      dicasOrdenadas.forEach((d) => {
+        if (d.imagens && Array.isArray(d.imagens)) {
+          d.imagens.forEach((url) => imagens.push(url));
+        }
+      });
+      setTodasImagens(imagens);
+    } catch (err: unknown) {
+      console.error('Erro ao buscar guia:', err);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const toggleSalvo = () => setSalvo((prev) => !prev);
+
+  const autor = guia?.autor;
+  const autorObj = Array.isArray(autor) ? autor[0] : autor;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-sm text-muted-foreground">Carregando guia...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !guia) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center px-4">
+          <p className="text-lg font-semibold mb-2">Guia não encontrado</p>
+          <p className="text-sm text-muted-foreground mb-6">
+            {error || 'Este guia pode ter sido removido'}
+          </p>
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="rounded-full gradient-peach px-6 py-3 text-sm font-medium text-primary"
+          >
+            Voltar
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-background pb-20">
-      {/* Carousel de imagens */}
-      <div className="relative aspect-[16/9] w-full bg-muted">
-        <Image
-          src={todasImagens[currentImageIndex] ?? mockGuia.capa}
-          alt={mockGuia.titulo}
-          fill
-          className="object-cover"
-          priority
-          sizes="100vw"
-        />
-        <div className="absolute inset-0 bg-gradient-to-b from-foreground/60 via-transparent to-foreground/40" />
-
-        {/* Header sobre a imagem */}
-        <div className="absolute top-0 left-0 right-0 z-10 px-4 py-4 pt-[env(safe-area-inset-top)]">
-          <div className="flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => router.back()}
-              className="p-2 -ml-2 rounded-full bg-background/80 backdrop-blur-md hover:bg-background transition-colors"
-              aria-label="Voltar"
-            >
-              <ArrowLeft className="h-6 w-6 text-primary" strokeWidth={1.5} />
-            </button>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className="p-2 rounded-full bg-background/80 backdrop-blur-md hover:bg-background transition-colors"
-                aria-label="Compartilhar"
-              >
-                <Share className="h-6 w-6 text-primary" strokeWidth={1.5} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setSaved(!saved)}
-                className={cn(
-                  'p-2 rounded-full bg-background/80 backdrop-blur-md hover:bg-background transition-colors',
-                  saved && 'bg-accent/20'
-                )}
-                aria-label={saved ? 'Remover dos salvos' : 'Salvar'}
-              >
-                <Bookmark
-                  className="h-6 w-6 text-primary"
-                  strokeWidth={1.5}
-                  fill={saved ? 'currentColor' : 'none'}
-                />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Navegação do carousel */}
-        {todasImagens.length > 1 && (
+      <div className="relative aspect-square w-full bg-muted">
+        {todasImagens.length > 0 ? (
           <>
+            <Image
+              src={todasImagens[currentImageIndex]}
+              fill
+              className="object-cover"
+              alt={guia.titulo}
+              sizes="100vw"
+            />
+
+            <div className="absolute inset-0 bg-gradient-to-b from-foreground/60 via-transparent to-foreground/60" />
+
+            <header className="absolute top-0 left-0 right-0 z-10">
+              <div className="flex items-center justify-between px-4 py-4">
+                <button
+                  type="button"
+                  onClick={() => router.back()}
+                  className="rounded-full bg-background/80 backdrop-blur-sm p-2"
+                >
+                  <ArrowLeft className="h-5 w-5" strokeWidth={1.5} />
+                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="rounded-full bg-background/80 backdrop-blur-sm p-2"
+                    aria-label="Compartilhar"
+                  >
+                    <Share2 className="h-5 w-5" strokeWidth={1.5} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={toggleSalvo}
+                    className="rounded-full bg-background/80 backdrop-blur-sm p-2"
+                  >
+                    <Bookmark
+                      className="h-5 w-5"
+                      strokeWidth={1.5}
+                      fill={salvo ? 'currentColor' : 'none'}
+                    />
+                  </button>
+                </div>
+              </div>
+            </header>
+
             {currentImageIndex > 0 && (
               <button
                 type="button"
                 onClick={() => setCurrentImageIndex((prev) => prev - 1)}
-                className="absolute left-4 top-1/2 -translate-y-1/2 p-2 rounded-full bg-background/80 backdrop-blur-md hover:bg-background transition-colors z-10"
-                aria-label="Imagem anterior"
+                className="absolute left-4 top-1/2 -translate-y-1/2 rounded-full bg-background/80 backdrop-blur-sm p-2 z-10"
               >
-                <ChevronLeft className="h-6 w-6 text-primary" strokeWidth={1.5} />
+                <ChevronLeft className="h-6 w-6" strokeWidth={1.5} />
               </button>
             )}
+
             {currentImageIndex < todasImagens.length - 1 && (
               <button
                 type="button"
                 onClick={() => setCurrentImageIndex((prev) => prev + 1)}
-                className="absolute right-4 top-1/2 -translate-y-1/2 p-2 rounded-full bg-background/80 backdrop-blur-md hover:bg-background transition-colors z-10"
-                aria-label="Próxima imagem"
+                className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-background/80 backdrop-blur-sm p-2 z-10"
               >
-                <ChevronRight className="h-6 w-6 text-primary" strokeWidth={1.5} />
+                <ChevronRight className="h-6 w-6" strokeWidth={1.5} />
               </button>
             )}
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 z-10">
-              {todasImagens.map((_, index) => (
-                <button
-                  key={index}
-                  type="button"
-                  onClick={() => setCurrentImageIndex(index)}
-                  className={cn(
-                    'h-2 rounded-full transition-all',
-                    index === currentImageIndex
-                      ? 'w-6 bg-primary-foreground'
-                      : 'w-2 bg-primary-foreground/50'
-                  )}
-                  aria-label={`Imagem ${index + 1}`}
-                />
-              ))}
-            </div>
+
+            {todasImagens.length > 1 && (
+              <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-2 z-10">
+                {todasImagens.map((_, index) => (
+                  <div
+                    key={index}
+                    className={`h-1.5 rounded-full transition-all ${
+                      index === currentImageIndex
+                        ? 'w-6 bg-primary-foreground'
+                        : 'w-1.5 bg-primary-foreground/40'
+                    }`}
+                  />
+                ))}
+              </div>
+            )}
           </>
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <BookOpen className="h-16 w-16 text-muted-foreground" />
+          </div>
         )}
       </div>
 
-      <div className="px-4 space-y-6 -mt-2 pt-4 rounded-t-2xl bg-background relative">
-        {/* Info do guia */}
-        <div className="py-4 space-y-2">
-          <span className="inline-block rounded-full bg-accent/10 text-accent px-3 py-1 text-xs font-medium">
-            {mockGuia.categoria}
-          </span>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            {mockGuia.titulo}
-          </h1>
-          <p className="text-sm text-muted-foreground flex items-center gap-1">
-            <MapPin className="h-4 w-4 shrink-0" strokeWidth={1.5} />
-            {mockGuia.cidade}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {mockGuia.stats.dicas} dicas • {mockGuia.stats.saves} salvamentos •{' '}
-            {mockGuia.stats.shares} compartilhamentos
-          </p>
-        </div>
-
-        {/* Autor */}
-        <div className="flex items-center gap-3">
-          <div className="relative h-12 w-12 rounded-full overflow-hidden bg-muted shrink-0">
-            <Image
-              src={mockGuia.autor.avatar}
-              alt={mockGuia.autor.nome}
-              fill
-              className="object-cover"
-              sizes="48px"
-            />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-foreground">
-              {mockGuia.autor.nome}
-            </p>
-            <p className="text-xs text-muted-foreground">criou este guia</p>
-          </div>
-          <button
-            type="button"
-            className="rounded-full gradient-peach px-4 py-2 text-xs font-medium text-primary shrink-0"
-          >
-            Seguir
-          </button>
-        </div>
-
-        {/* Descrição */}
+      <div className="px-4 py-6 space-y-6">
         <div>
-          <p className="text-sm leading-relaxed text-foreground">
-            {descLong && !descExpanded
-              ? `${mockGuia.descricao.slice(0, DESC_LIMIT)}...`
-              : mockGuia.descricao}
-          </p>
-          {descLong && (
-            <button
-              type="button"
-              onClick={() => setDescExpanded(!descExpanded)}
-              className="text-sm font-medium text-accent mt-1"
-            >
-              {descExpanded ? 'Ver menos' : 'Ver mais'}
-            </button>
+          <h1 className="text-2xl font-bold mb-2">{guia.titulo}</h1>
+          {autorObj && (
+            <div className="flex items-center gap-3">
+              <div className="relative h-10 w-10 rounded-full bg-muted overflow-hidden shrink-0">
+                <Image
+                  src={autorObj.avatar || '/images/hero1.jpg'}
+                  width={40}
+                  height={40}
+                  alt={autorObj.nome}
+                  className="h-full w-full object-cover"
+                />
+              </div>
+              <div>
+                <p className="text-sm font-medium">{autorObj.nome}</p>
+                <p className="text-xs text-muted-foreground">@{autorObj.username}</p>
+              </div>
+            </div>
           )}
         </div>
 
-        {/* Ações */}
-        <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={() => setSaved(!saved)}
-            className={cn(
-              'flex-1 rounded-full border border-border py-3 text-sm font-medium transition-colors',
-              saved ? 'bg-accent/10 border-accent text-accent' : 'bg-card hover:bg-muted'
-            )}
-          >
-            {saved ? 'Salvo' : 'Salvar Guia'}
-          </button>
-          <button
-            type="button"
-            className="flex-1 rounded-full border border-border bg-card py-3 text-sm font-medium hover:bg-muted transition-colors flex items-center justify-center gap-2"
-          >
-            <Share className="h-4 w-4" strokeWidth={1.5} />
-            Compartilhar
-          </button>
+        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+          <div className="flex items-center gap-1">
+            <MapPin className="h-4 w-4" strokeWidth={1.5} />
+            <span>{guia.cidade}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <BookOpen className="h-4 w-4" strokeWidth={1.5} />
+            <span>{dicas.length} dicas</span>
+          </div>
         </div>
 
-        {/* Lista de dicas */}
+        <p className="text-sm leading-relaxed">{guia.descricao}</p>
+
         <div>
-          <h2 className="text-base font-bold text-foreground mb-3">
-            Dicas deste guia ({mockGuia.dicas.length})
-          </h2>
+          <h2 className="text-lg font-bold mb-4">Dicas neste guia</h2>
           <div className="space-y-3">
-            {mockGuia.dicas.map((dica, index) => (
-              <Link
+            {dicas.map((dica, index) => (
+              <button
                 key={dica.id}
-                href={`/dica/${dica.id}`}
-                className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3 hover:shadow-md transition-shadow"
+                type="button"
+                onClick={() => router.push(`/dica/${dica.id}`)}
+                className="w-full rounded-2xl border border-border bg-card p-4 text-left hover:bg-muted transition-colors"
               >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">
-                  {index + 1}
-                </span>
-                <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl">
-                  <Image
-                    src={dica.imagem}
-                    alt={dica.titulo}
-                    fill
-                    className="object-cover"
-                    sizes="80px"
-                  />
+                <div className="flex gap-3">
+                  <div className="flex-shrink-0 w-12 h-12 rounded-lg bg-accent/10 flex items-center justify-center">
+                    <span className="text-lg font-bold text-accent">{index + 1}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold mb-1 truncate">{dica.titulo}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {dica.localizacao ?? ''}
+                    </p>
+                  </div>
+                  {dica.imagens && dica.imagens[0] && (
+                    <div className="relative flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden">
+                      <Image
+                        src={dica.imagens[0]}
+                        width={64}
+                        height={64}
+                        alt={dica.titulo}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                  )}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold line-clamp-1">{dica.titulo}</p>
-                  <p className="text-xs text-muted-foreground line-clamp-1">
-                    {dica.descricao}
-                  </p>
-                  <span className="inline-block mt-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-mono uppercase text-muted-foreground">
-                    {dica.categoria}
-                  </span>
-                </div>
-                <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" strokeWidth={1.5} />
-              </Link>
+              </button>
             ))}
           </div>
         </div>
 
-        {/* Mais guias do autor */}
-        <div>
-          <h2 className="text-base font-bold text-foreground mb-3">
-            Mais guias de {mockGuia.autor.nome}
-          </h2>
-          <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-2">
-            {[
-              {
-                id: '2',
-                titulo: 'Praias do Nordeste',
-                capa: '/images/guia2.jpg',
-                numeroDicas: 8,
-              },
-            ].map((g) => (
-              <Link
-                key={g.id}
-                href={`/guia/${g.id}`}
-                className="shrink-0 w-40 rounded-2xl border border-border bg-card overflow-hidden hover:shadow-lg transition-shadow"
-              >
-                <div className="relative aspect-video">
-                  <Image
-                    src={g.capa}
-                    alt={g.titulo}
-                    fill
-                    className="object-cover"
-                    sizes="160px"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-foreground/60 to-transparent" />
-                  <p className="absolute bottom-2 left-2 right-2 text-sm font-semibold text-primary-foreground line-clamp-2">
-                    {g.titulo}
-                  </p>
-                </div>
-                <p className="p-2 text-xs text-muted-foreground">{g.numeroDicas} dicas</p>
-              </Link>
-            ))}
+        <div className="flex items-center gap-6 text-sm">
+          <div>
+            <span className="font-semibold">{guia.curtidas ?? 0}</span>
+            <span className="text-muted-foreground ml-1">curtidas</span>
+          </div>
+          <div>
+            <span className="font-semibold">{guia.saves ?? 0}</span>
+            <span className="text-muted-foreground ml-1">salvos</span>
+          </div>
+          <div>
+            <span className="font-semibold">{guia.shares ?? 0}</span>
+            <span className="text-muted-foreground ml-1">compartilhamentos</span>
           </div>
         </div>
       </div>
