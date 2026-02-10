@@ -86,9 +86,10 @@ export default function DicaDetalhadaPage() {
         .eq('id', dicaId)
         .single();
       if (error) throw error;
-      const row = data as typeof dica & { autor?: unknown };
+      type DicaRow = NonNullable<typeof dica>;
+      const row = data as DicaRow & { autor?: unknown };
       const autor = Array.isArray(row?.autor) ? row.autor[0] : row?.autor;
-      setDica({ ...row, autor: autor as typeof dica.autor });
+      setDica({ ...row, autor: autor as DicaRow['autor'] });
     } catch (err) {
       console.error('Erro:', err);
     } finally {
