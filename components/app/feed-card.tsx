@@ -44,15 +44,11 @@ interface FeedCardProps {
 }
 
 export function FeedCard({ post, usuarioId }: FeedCardProps) {
-  const isDica = post.tipo === 'dica' && post.dicaId;
-  const { curtido, curtidas, toggleCurtida } = useCurtidas(
-    isDica ? post.dicaId : null,
-    usuarioId
-  );
-  const { salvo, toggleSalvo } = useSalvos(
-    isDica ? post.dicaId : null,
-    usuarioId
-  );
+  const dicaId = post.tipo === 'dica' && post.dicaId != null ? post.dicaId : null;
+  const { curtido, curtidas, toggleCurtida } = useCurtidas(dicaId, usuarioId);
+  const { salvo, toggleSalvo } = useSalvos(dicaId, usuarioId);
+
+  const isDica = dicaId != null;
 
   const displayCurtidas = isDica ? curtidas : post.curtidas;
   const displayCurtido = isDica ? curtido : post.curtido;
