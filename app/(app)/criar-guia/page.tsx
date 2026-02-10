@@ -112,7 +112,7 @@ export default function CriarGuiaPage() {
         const { url, error } = await uploadImage(capaFile, 'guias');
         if (error) throw new Error(error);
         capaUrl = url;
-        setCapa(capaUrl);
+        setCapa(capaUrl ?? undefined);
       }
 
       const guiaTemp = {
