@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { ArrowLeft, ChevronUp, ChevronDown } from 'lucide-react';
 import { BottomNav } from '@/components/app/bottom-nav';
+import { useDicas } from '@/lib/hooks/use-supabase';
+import { getCurrentUser } from '@/lib/current-user';
+import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 
 const GUIA_TEMP_KEY = 'guia-temp';
@@ -18,47 +21,7 @@ interface GuiaTemp {
   capa?: string;
 }
 
-const mockDicasFromIds: Record<
-  string,
-  { id: string; titulo: string; localizacao: string; image: string }
-> = {
-  '1': {
-    id: '1',
-    titulo: 'Café da Manhã Perfeito',
-    localizacao: 'Vila Madalena, SP',
-    image: '/images/cafe1.jpg',
-  },
-  '2': {
-    id: '2',
-    titulo: 'Padaria Artesanal',
-    localizacao: 'Pinheiros, SP',
-    image: '/images/padaria.jpg',
-  },
-  '3': {
-    id: '3',
-    titulo: 'Vista Panorâmica',
-    localizacao: 'Centro, SP',
-    image: '/images/hero1.jpg',
-  },
-  '4': {
-    id: '4',
-    titulo: 'Bar com Música Ao Vivo',
-    localizacao: 'Vila Madalena, SP',
-    image: '/images/hero2.jpg',
-  },
-  '5': {
-    id: '5',
-    titulo: 'Parque para Piquenique',
-    localizacao: 'Ibirapuera, SP',
-    image: '/images/hero3.jpg',
-  },
-  '6': {
-    id: '6',
-    titulo: 'Feira de Artesanato',
-    localizacao: 'Benedito Calixto, SP',
-    image: '/images/guia1.jpg',
-  },
-};
+type DicaPreview = { id: string; titulo: string; localizacao: string; image: string };
 
 function loadGuiaTemp(): Partial<GuiaTemp> {
   if (typeof window === 'undefined') return {};
@@ -88,18 +51,32 @@ function clearGuiaTemp() {
 
 export default function PublicarGuiaPage() {
   const router = useRouter();
+  const { dicas } = useDicas();
   const [guia, setGuia] = useState<Partial<GuiaTemp>>({});
   const [dicaIds, setDicaIds] = useState<string[]>([]);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [publicando, setPublicando] = useState(false);
+  const [guiaCriadoId, setGuiaCriadoId] = useState<string | null>(null);
 
   useEffect(() => {
     setGuia(loadGuiaTemp());
     setDicaIds(loadDicasSelecionadas());
   }, []);
 
-  const dicasOrdenadas = dicaIds
-    .map((id) => mockDicasFromIds[id])
-    .filter(Boolean);
+  const dicaMap = new Map(
+    dicas.map((d) => [
+      d.id,
+      {
+        id: d.id,
+        titulo: d.titulo,
+        localizacao: d.localizacao,
+        image: Array.isArray(d.imagens) && d.imagens[0] ? d.imagens[0] : '/images/hero1.jpg',
+      },
+    ])
+  );
+  const dicasOrdenadas: DicaPreview[] = dicaIds
+    .map((id) => dicaMap.get(id))
+    .filter((d): d is DicaPreview => Boolean(d));
 
   const move = (index: number, dir: 'up' | 'down') => {
     const newIds = [...dicaIds];
@@ -112,9 +89,57 @@ export default function PublicarGuiaPage() {
     }
   };
 
-  const handlePublicar = () => {
-    clearGuiaTemp();
-    setShowSuccess(true);
+  const handlePublicar = async () => {
+    setPublicando(true);
+    try {
+      const guiaTemp = JSON.parse(
+        typeof window !== 'undefined' ? localStorage.getItem(GUIA_TEMP_KEY) || '{}' : '{}'
+      );
+      const dicasSelecionadas: string[] = JSON.parse(
+        typeof window !== 'undefined' ? localStorage.getItem(DICAS_SELECIONADAS_KEY) || '[]' : '[]'
+      );
+
+      const usuario = await getCurrentUser();
+      if (!usuario) throw new Error('Usuário não encontrado');
+
+      const { data: guiaData, error: guiaError } = await supabase
+        .from('guias')
+        .insert({
+          titulo: guiaTemp.titulo,
+          descricao: guiaTemp.descricao,
+          capa: guiaTemp.capa ?? null,
+          cidade: guiaTemp.cidade,
+          categoria: guiaTemp.categoria,
+          autor_id: usuario.id,
+          curtidas: 0,
+          saves: 0,
+          shares: 0,
+        })
+        .select()
+        .single();
+
+      if (guiaError) throw guiaError;
+
+      const guiasDicas = dicasSelecionadas.map((dicaId: string, index: number) => ({
+        guia_id: guiaData.id,
+        dica_id: dicaId,
+        ordem: index + 1,
+      }));
+
+      const { error: associacaoError } = await supabase
+        .from('guias_dicas')
+        .insert(guiasDicas);
+
+      if (associacaoError) throw associacaoError;
+
+      setGuiaCriadoId(guiaData.id);
+      clearGuiaTemp();
+      setShowSuccess(true);
+    } catch (err: unknown) {
+      alert('Erro ao publicar guia: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setPublicando(false);
+    }
   };
 
   const handleSalvarRascunho = () => {
@@ -123,7 +148,7 @@ export default function PublicarGuiaPage() {
 
   const handleVerGuia = () => {
     setShowSuccess(false);
-    router.push('/guia/1');
+    router.push(guiaCriadoId ? `/guia/${guiaCriadoId}` : '/feed');
   };
 
   const handleCriarOutro = () => {
@@ -152,9 +177,10 @@ export default function PublicarGuiaPage() {
           <button
             type="button"
             onClick={handlePublicar}
-            className="text-sm font-medium text-accent"
+            disabled={publicando}
+            className="text-sm font-medium text-accent disabled:opacity-50"
           >
-            Publicar
+            {publicando ? '...' : 'Publicar'}
           </button>
         </div>
       </header>
@@ -253,9 +279,10 @@ export default function PublicarGuiaPage() {
           <button
             type="button"
             onClick={handlePublicar}
-            className="rounded-full gradient-peach px-6 py-3 text-sm font-medium text-primary hover:opacity-90 transition-opacity"
+            disabled={publicando}
+            className="rounded-full gradient-peach px-6 py-3 text-sm font-medium text-primary hover:opacity-90 transition-opacity disabled:opacity-50"
           >
-            Publicar Guia
+            {publicando ? 'Publicando...' : 'Publicar Guia'}
           </button>
         </div>
       </div>

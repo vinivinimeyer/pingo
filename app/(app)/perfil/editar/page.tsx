@@ -1,73 +1,139 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft, MapPin, Camera } from 'lucide-react';
 import { BottomNav } from '@/components/app/bottom-nav';
 import { Input } from '@/components/ui/input';
+import { useUpload } from '@/lib/hooks/use-supabase';
+import { useCurrentUser } from '@/lib/current-user';
+import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 
-const mockUser = {
-  nome: 'Karenne Tikt',
-  username: 'karenne',
-  bio: 'Exploradora de praias 🏖️',
-  localizacao: 'São Paulo, SP',
-  capa: '/images/guia1.jpg',
-  avatar: '/avatars/marina.jpg',
-  instagram: '',
-  facebook: '',
-  twitter: '',
-  perfilPrivado: false,
-  mostrarLocalizacao: true,
-};
-
 export default function EditarPerfilPage() {
-  const [nome, setNome] = useState(mockUser.nome);
-  const [username, setUsername] = useState(mockUser.username);
-  const [bio, setBio] = useState(mockUser.bio);
-  const [localizacao, setLocalizacao] = useState(mockUser.localizacao);
-  const [capa, setCapa] = useState(mockUser.capa);
-  const [avatar, setAvatar] = useState(mockUser.avatar);
-  const [instagram, setInstagram] = useState(mockUser.instagram);
-  const [facebook, setFacebook] = useState(mockUser.facebook);
-  const [twitter, setTwitter] = useState(mockUser.twitter);
-  const [perfilPrivado, setPerfilPrivado] = useState(mockUser.perfilPrivado);
-  const [mostrarLocalizacao, setMostrarLocalizacao] = useState(
-    mockUser.mostrarLocalizacao
-  );
-  const [saved, setSaved] = useState(false);
-  const capaInputRef = useRef<HTMLInputElement>(null);
-  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
+  const { uploading, uploadImage } = useUpload();
+  const { usuario, loading, error } = useCurrentUser();
+  const [salvando, setSalvando] = useState(false);
 
-  const handleCapaChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = () => setCapa(reader.result as string);
-      reader.readAsDataURL(file);
+  const [nome, setNome] = useState('');
+  const [username, setUsername] = useState('');
+  const [bio, setBio] = useState('');
+  const [localizacao, setLocalizacao] = useState('');
+  const [website, setWebsite] = useState('');
+
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [capaFile, setCapaFile] = useState<File | null>(null);
+  const [capaPreview, setCapaPreview] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (usuario) {
+      setNome(usuario.nome ?? '');
+      setUsername(usuario.username ?? '');
+      setBio(usuario.bio ?? '');
+      setLocalizacao(usuario.localizacao ?? '');
+      setWebsite(usuario.website ?? '');
+      setAvatarPreview(usuario.avatar ?? null);
+      setCapaPreview(usuario.capa ?? null);
     }
-  };
+  }, [usuario]);
 
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = () => setAvatar(reader.result as string);
-      reader.readAsDataURL(file);
+    if (!file) return;
+    setAvatarFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setAvatarPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function handleCapaChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCapaFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setCapaPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function handleSalvar(e: React.FormEvent) {
+    e.preventDefault();
+    if (!usuario) return;
+
+    setSalvando(true);
+
+    try {
+      let avatarUrl = usuario.avatar;
+      let capaUrl = usuario.capa;
+
+      if (avatarFile) {
+        const { url, error } = await uploadImage(avatarFile, 'avatars');
+        if (error) throw new Error(error);
+        avatarUrl = url ?? undefined;
+      }
+
+      if (capaFile) {
+        const { url, error } = await uploadImage(capaFile, 'avatars');
+        if (error) throw new Error(error);
+        capaUrl = url ?? undefined;
+      }
+
+      const { error } = await supabase
+        .from('usuarios')
+        .update({
+          nome,
+          username,
+          bio: bio || null,
+          localizacao: localizacao || null,
+          website: website || null,
+          avatar: avatarUrl,
+          capa: capaUrl,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', usuario.id);
+
+      if (error) throw error;
+
+      router.push('/perfil?success=Perfil atualizado!');
+    } catch (err) {
+      alert('Erro ao salvar: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setSalvando(false);
     }
-  };
+  }
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  };
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-background pb-24 flex items-center justify-center">
+        <div className="text-center">
+          <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-sm text-muted-foreground">Carregando...</p>
+        </div>
+      </main>
+    );
+  }
 
-  const hasChanges =
-    nome !== mockUser.nome ||
-    username !== mockUser.username ||
-    bio !== mockUser.bio ||
-    localizacao !== mockUser.localizacao;
+  if (!usuario && !loading) {
+    return (
+      <main className="min-h-screen bg-background pb-24 flex items-center justify-center px-4">
+        <div className="text-center">
+          <p className="text-sm text-muted-foreground mb-2">
+            {error || 'Usuário não encontrado'}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Configure CURRENT_USER_ID em lib/current-user.ts
+          </p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-background pb-24">
@@ -83,8 +149,8 @@ export default function EditarPerfilPage() {
           <h1 className="text-lg font-semibold text-foreground">Editar Perfil</h1>
           <button
             type="button"
-            onClick={handleSave}
-            disabled={!hasChanges}
+            onClick={handleSalvar}
+            disabled={salvando || uploading}
             className="text-sm font-medium text-accent disabled:opacity-50"
           >
             Salvar
@@ -92,15 +158,18 @@ export default function EditarPerfilPage() {
         </div>
       </header>
 
-      <div className="px-4 py-6 space-y-6">
-        {/* Fotos */}
+      <form onSubmit={handleSalvar} className="px-4 py-6 space-y-6">
         <div>
           <div
             className="relative aspect-[3/1] rounded-2xl overflow-hidden bg-muted cursor-pointer"
-            onClick={() => capaInputRef.current?.click()}
+            onClick={() => (document.getElementById('capa-input') as HTMLInputElement)?.click()}
           >
-            {capa ? (
-              <img src={capa} alt="Capa" className="w-full h-full object-cover" />
+            {(capaPreview ?? usuario.capa) ? (
+              <img
+                src={capaPreview ?? usuario.capa}
+                alt="Capa"
+                className="w-full h-full object-cover"
+              />
             ) : (
               <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-sm">
                 Adicionar capa
@@ -112,7 +181,7 @@ export default function EditarPerfilPage() {
               </span>
             </div>
             <input
-              ref={capaInputRef}
+              id="capa-input"
               type="file"
               accept="image/*"
               className="sr-only"
@@ -122,11 +191,11 @@ export default function EditarPerfilPage() {
           <div className="flex justify-center -mt-12 relative z-10">
             <button
               type="button"
-              onClick={() => avatarInputRef.current?.click()}
+              onClick={() => (document.getElementById('avatar-input') as HTMLInputElement)?.click()}
               className="relative h-24 w-24 rounded-full border-4 border-background overflow-hidden bg-muted"
             >
               <Image
-                src={avatar}
+                src={avatarPreview ?? usuario.avatar ?? '/images/hero1.jpg'}
                 alt="Avatar"
                 fill
                 className="object-cover"
@@ -137,7 +206,7 @@ export default function EditarPerfilPage() {
               </div>
             </button>
             <input
-              ref={avatarInputRef}
+              id="avatar-input"
               type="file"
               accept="image/*"
               className="sr-only"
@@ -146,7 +215,6 @@ export default function EditarPerfilPage() {
           </div>
         </div>
 
-        {/* Dados básicos */}
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-foreground mb-2">
@@ -155,7 +223,7 @@ export default function EditarPerfilPage() {
             <Input
               value={nome}
               onChange={(e) => setNome(e.target.value)}
-              className="rounded-xl border-2 border-[#F0C05A]"
+              className={cn('rounded-xl border-2', 'border-[#F0C05A]')}
             />
           </div>
           <div>
@@ -200,69 +268,27 @@ export default function EditarPerfilPage() {
               />
             </div>
           </div>
-        </div>
-
-        {/* Redes sociais */}
-        <div className="space-y-4">
-          <h3 className="text-sm font-semibold text-foreground">Redes sociais</h3>
-          <Input
-            placeholder="Instagram"
-            value={instagram}
-            onChange={(e) => setInstagram(e.target.value)}
-            className="rounded-xl border-2 border-[#F0C05A]"
-          />
-          <Input
-            placeholder="Facebook"
-            value={facebook}
-            onChange={(e) => setFacebook(e.target.value)}
-            className="rounded-xl border-2 border-[#F0C05A]"
-          />
-          <Input
-            placeholder="Twitter"
-            value={twitter}
-            onChange={(e) => setTwitter(e.target.value)}
-            className="rounded-xl border-2 border-[#F0C05A]"
-          />
-        </div>
-
-        {/* Privacidade */}
-        <div className="space-y-4">
-          <h3 className="text-sm font-semibold text-foreground">Privacidade</h3>
-          <label className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3 cursor-pointer">
-            <span className="text-sm font-medium">Perfil privado</span>
-            <input
-              type="checkbox"
-              checked={perfilPrivado}
-              onChange={(e) => setPerfilPrivado(e.target.checked)}
-              className="rounded border-border"
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-2">
+              Site
+            </label>
+            <Input
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+              placeholder="https://..."
+              className="rounded-xl border-2 border-[#F0C05A]"
             />
-          </label>
-          <label className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3 cursor-pointer">
-            <span className="text-sm font-medium">Mostrar localização</span>
-            <input
-              type="checkbox"
-              checked={mostrarLocalizacao}
-              onChange={(e) => setMostrarLocalizacao(e.target.checked)}
-              className="rounded border-border"
-            />
-          </label>
+          </div>
         </div>
 
         <button
-          type="button"
-          onClick={handleSave}
-          disabled={!hasChanges}
+          type="submit"
+          disabled={salvando || uploading}
           className="w-full rounded-full gradient-peach px-6 py-4 text-sm font-medium text-primary hover:opacity-90 disabled:opacity-50 transition-opacity"
         >
-          Salvar Alterações
+          {salvando || uploading ? 'Salvando...' : 'Salvar Alterações'}
         </button>
-      </div>
-
-      {saved && (
-        <div className="fixed bottom-24 left-4 right-4 bg-primary text-primary-foreground text-sm text-center py-3 rounded-xl z-50">
-          Alterações salvas!
-        </div>
-      )}
+      </form>
 
       <BottomNav />
     </main>

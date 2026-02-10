@@ -6,28 +6,52 @@ import { useRouter } from 'next/navigation';
 import { Search, MapPin, ChevronRight, Camera } from 'lucide-react';
 import { BottomNav } from '@/components/app/bottom-nav';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { DicaCard } from '@/components/app/dica-card';
+import { GuiaCard } from '@/components/app/guia-card';
+import { useDicas, useGuias } from '@/lib/hooks/use-supabase';
+import type { DicaCardDica } from '@/components/app/dica-card';
+import type { GuiaCardGuia } from '@/components/app/guia-card';
+
+function toDicaCard(d: { id: string; titulo: string; imagens: string[]; localizacao: string; categoria: string; curtidas?: number }): DicaCardDica {
+  return {
+    id: d.id,
+    titulo: d.titulo,
+    imagem: Array.isArray(d.imagens) && d.imagens[0] ? d.imagens[0] : '/images/hero1.jpg',
+    localizacao: d.localizacao,
+    categoria: d.categoria,
+    curtidas: d.curtidas,
+  };
+}
+
+function toGuiaCard(g: { id: string; titulo: string; capa?: string; cidade: string; categoria: string; saves?: number }, numeroDicas: number): GuiaCardGuia {
+  return {
+    id: g.id,
+    titulo: g.titulo,
+    capa: g.capa || '/images/guia1.jpg',
+    cidade: g.cidade,
+    categoria: g.categoria,
+    numeroDicas,
+    saves: g.saves ?? 0,
+  };
+}
 
 export default function HomePage() {
   const router = useRouter();
   const [currentSlide, setCurrentSlide] = useState(0);
 
+  const { dicas, loading: loadingDicas } = useDicas();
+  const { guias, loading: loadingGuias } = useGuias();
+
+  const dicasRecentes = dicas.slice(0, 5).map((d) => toDicaCard({ ...d, imagens: d.imagens || [] }));
+  const guiasPopulares = [...guias]
+    .sort((a, b) => (b.saves ?? 0) - (a.saves ?? 0))
+    .slice(0, 5)
+    .map((g) => toGuiaCard(g, 0));
+
   const heroSlides = [
     { id: 1, image: '/images/hero1.jpg', title: 'Descubra lugares incríveis' },
     { id: 2, image: '/images/hero2.jpg', title: 'Compartilhe suas experiências' },
     { id: 3, image: '/images/hero3.jpg', title: 'Explore o mundo' },
-  ];
-
-  const perfis = [
-    { id: '1', name: 'Marina Silva', avatar: '/avatars/marina.jpg', username: '@marinasilva' },
-    { id: '2', name: 'João Santos', avatar: '/avatars/joao.jpg', username: '@joaosantos' },
-    { id: '3', name: 'Ana Costa', avatar: '/avatars/ana.jpg', username: '@anacosta' },
-  ];
-
-  const guias = [
-    { id: '1', title: 'Roteiro 3 dias em SP', image: '/images/guia1.jpg', dicas: 12 },
-    { id: '2', title: 'Melhores praias do Brasil', image: '/images/guia2.jpg', dicas: 8 },
-    { id: '3', title: 'Gastronomia carioca', image: '/images/guia3.jpg', dicas: 15 },
   ];
 
   const categorias = [
@@ -111,29 +135,48 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Perfis para seguir */}
-        <section className="px-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base font-bold text-foreground">Perfis para seguir</h2>
-            <Link href="/perfil/sugestoes" className="text-sm text-accent hover:underline">
-              Ver todos
-            </Link>
-          </div>
-          <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-1">
-            {perfis.map((perfil) => (
-              <Link key={perfil.id} href={`/perfil/${perfil.id}`} className="shrink-0">
-                <div className="w-24 flex flex-col items-center gap-2">
-                  <div className="h-16 w-16 rounded-full bg-gradient-peach flex items-center justify-center text-primary font-bold text-lg">
-                    {perfil.name.charAt(0)}
-                  </div>
-                  <div className="text-center">
-                    <p className="text-xs font-semibold text-foreground line-clamp-1">{perfil.name}</p>
-                    <p className="text-[10px] text-muted-foreground line-clamp-1">{perfil.username}</p>
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
+        {/* Dicas Recentes */}
+        <section className="px-4 py-6">
+          <h2 className="text-lg font-bold text-foreground mb-4">Dicas Recentes</h2>
+          {loadingDicas ? (
+            <div className="space-y-3">
+              {[1, 2].map((i) => (
+                <div key={i} className="h-24 rounded-2xl bg-muted animate-pulse" />
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {dicasRecentes.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhuma dica ainda</p>
+              ) : (
+                dicasRecentes.map((dica) => (
+                  <DicaCard key={dica.id} dica={dica} variant="list" />
+                ))
+              )}
+            </div>
+          )}
+        </section>
+
+        {/* Guias Populares */}
+        <section className="px-4 py-6">
+          <h2 className="text-lg font-bold text-foreground mb-4">Guias Populares</h2>
+          {loadingGuias ? (
+            <div className="grid grid-cols-2 gap-3">
+              {[1, 2].map((i) => (
+                <div key={i} className="aspect-video rounded-2xl bg-muted animate-pulse" />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              {guiasPopulares.length === 0 ? (
+                <p className="col-span-2 text-sm text-muted-foreground">Nenhum guia ainda</p>
+              ) : (
+                guiasPopulares.map((guia) => (
+                  <GuiaCard key={guia.id} guia={guia} variant="grid" />
+                ))
+              )}
+            </div>
+          )}
         </section>
 
         {/* Perto de você */}
@@ -150,31 +193,6 @@ export default function HomePage() {
               </div>
             </div>
           </Link>
-        </section>
-
-        {/* Dicas e Guias */}
-        <section className="px-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base font-bold text-foreground">Dicas e Guias</h2>
-            <Link href="/guias" className="text-sm text-accent hover:underline">
-              Ver todos
-            </Link>
-          </div>
-          <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-1">
-            {guias.map((guia) => (
-              <Link key={guia.id} href={`/guia/${guia.id}`} className="shrink-0">
-                <div className="w-40 rounded-2xl border border-border bg-card overflow-hidden">
-                  <div className="h-32 w-full gradient-peach flex items-center justify-center">
-                    <Camera className="h-8 w-8 text-primary" strokeWidth={1.5} />
-                  </div>
-                  <div className="p-3">
-                    <h3 className="text-sm font-semibold text-foreground line-clamp-2 mb-1">{guia.title}</h3>
-                    <p className="text-xs text-muted-foreground">{guia.dicas} dicas</p>
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
         </section>
 
         {/* Banner Pin.Go */}

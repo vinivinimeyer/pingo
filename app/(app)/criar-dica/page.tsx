@@ -13,6 +13,9 @@ import {
   SheetTitle,
   SheetDescription,
 } from '@/components/ui/sheet';
+import { useUpload } from '@/lib/hooks/use-supabase';
+import { getCurrentUser } from '@/lib/current-user';
+import { supabase } from '@/lib/supabase';
 
 const categories = [
   'Restaurantes',
@@ -29,7 +32,9 @@ function CriarDicaPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const returnTo = searchParams.get('returnTo');
-  const [images, setImages] = useState<string[]>([]);
+  const { uploading, progress, uploadMultiple } = useUpload();
+  const [imagens, setImagens] = useState<File[]>([]);
+  const [imagensPreviews, setImagensPreviews] = useState<string[]>([]);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -46,24 +51,37 @@ function CriarDicaPageContent() {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  const hasChanges = images.length > 0 || formData.title || formData.description || formData.location || formData.category;
+  const hasChanges =
+    imagens.length > 0 ||
+    formData.title ||
+    formData.description ||
+    formData.location ||
+    formData.category;
 
-  const handleImageAdd = () => {
-    if (images.length >= 10) return;
-    // Simular upload - em produção, usar input file real
-    const newImage = `/images/upload-${images.length + 1}.jpg`;
-    setImages([...images, newImage]);
-  };
+  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    if (imagens.length + files.length > 10) return;
+    setImagens((prev) => [...prev, ...files].slice(0, 10));
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagensPreviews((prev) => [...prev, reader.result as string]);
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  }
 
-  const handleImageRemove = (index: number) => {
-    setImages(images.filter((_, i) => i !== index));
-  };
+  function removerImagem(index: number) {
+    setImagens((prev) => prev.filter((_, i) => i !== index));
+    setImagensPreviews((prev) => prev.filter((_, i) => i !== index));
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const newErrors: typeof errors = {};
 
-    if (images.length === 0) {
+    if (imagens.length === 0) {
       newErrors.images = 'Adicione pelo menos uma imagem';
     }
     if (!formData.title.trim() || formData.title.trim().length < 5) {
@@ -86,24 +104,39 @@ function CriarDicaPageContent() {
 
     setIsLoading(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      if (returnTo === 'catalogo') {
-        const novaDica = {
-          id: `nova-${Date.now()}`,
-          titulo: formData.title,
-          localizacao: formData.location,
-          image: images[0] || '/images/cafe1.jpg',
+      const { urls, error: uploadError } = await uploadMultiple(imagens, 'dicas');
+      if (uploadError) throw new Error(uploadError);
+
+      const usuario = await getCurrentUser();
+      if (!usuario) throw new Error('Usuário não encontrado');
+
+      const { data, error } = await supabase
+        .from('dicas')
+        .insert({
+          titulo: formData.title.trim(),
+          descricao: formData.description.trim(),
+          imagens: urls,
           categoria: formData.category,
-        };
+          localizacao: formData.location.trim(),
+          autor_id: usuario.id,
+          curtidas: 0,
+          comentarios: 0,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      if (returnTo === 'catalogo') {
         if (typeof window !== 'undefined') {
-          localStorage.setItem(DICA_NOVA_CRIADA_KEY, JSON.stringify(novaDica));
+          localStorage.setItem(DICA_NOVA_CRIADA_KEY, JSON.stringify(data));
         }
         router.push('/criar-guia/catalogo');
       } else {
         router.push('/perfil?success=Dica publicada com sucesso!');
       }
-    } catch (error) {
-      console.error('Erro ao publicar:', error);
+    } catch (err: unknown) {
+      alert('Erro ao publicar dica: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
       setIsLoading(false);
     }
@@ -150,11 +183,13 @@ function CriarDicaPageContent() {
         <div>
           <label className="block text-sm font-medium text-primary mb-2">Imagens</label>
           <div className="grid grid-cols-3 gap-3">
-            {images.map((image, index) => (
+            {imagensPreviews.map((preview, index) => (
               <div key={index} className="relative aspect-square rounded-xl overflow-hidden">
-                <div className="w-full h-full gradient-peach flex items-center justify-center">
-                  <Camera className="h-8 w-8 text-primary" strokeWidth={1.5} />
-                </div>
+                <img
+                  src={preview}
+                  alt=""
+                  className="w-full h-full object-cover"
+                />
                 {index === 0 && (
                   <div className="absolute top-2 left-2 bg-primary text-primary-foreground text-[10px] px-2 py-1 rounded-full font-medium">
                     Capa
@@ -162,7 +197,7 @@ function CriarDicaPageContent() {
                 )}
                 <button
                   type="button"
-                  onClick={() => handleImageRemove(index)}
+                  onClick={() => removerImagem(index)}
                   className="absolute top-2 right-2 p-1 bg-destructive text-destructive-foreground rounded-full hover:bg-destructive/90 transition-colors"
                   aria-label="Remover imagem"
                 >
@@ -170,15 +205,18 @@ function CriarDicaPageContent() {
                 </button>
               </div>
             ))}
-            {images.length < 10 && (
-              <button
-                type="button"
-                onClick={handleImageAdd}
-                className="aspect-square rounded-xl border-2 border-dashed border-border bg-muted/30 flex flex-col items-center justify-center gap-2 hover:bg-muted/50 transition-colors"
-              >
+            {imagens.length < 10 && (
+              <label className="aspect-square rounded-xl border-2 border-dashed border-border bg-muted/30 flex flex-col items-center justify-center gap-2 hover:bg-muted/50 transition-colors cursor-pointer">
                 <Camera className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
                 <span className="text-xs text-muted-foreground text-center px-2">Adicionar foto</span>
-              </button>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="sr-only"
+                  onChange={handleImageChange}
+                />
+              </label>
             )}
           </div>
           {errors.images && (
@@ -299,8 +337,7 @@ function CriarDicaPageContent() {
             type="button"
             variant="secondary"
             onClick={() => {
-              // Salvar rascunho no localStorage
-              localStorage.setItem('dica-rascunho', JSON.stringify({ images, ...formData }));
+              localStorage.setItem('dica-rascunho', JSON.stringify(formData));
               router.push('/perfil');
             }}
             disabled={isLoading}
@@ -343,6 +380,23 @@ function CriarDicaPageContent() {
           </div>
         </SheetContent>
       </Sheet>
+
+      {uploading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/60 backdrop-blur-sm">
+          <div className="rounded-2xl bg-card p-6 shadow-2xl max-w-sm w-full mx-4">
+            <p className="text-sm font-medium mb-4">Enviando imagens...</p>
+            <div className="h-2 rounded-full bg-muted overflow-hidden">
+              <div
+                className="h-full bg-accent transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground mt-2 text-center">
+              {Math.round(progress)}%
+            </p>
+          </div>
+        </div>
+      )}
 
       <BottomNav />
     </main>

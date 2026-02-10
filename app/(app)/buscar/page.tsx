@@ -4,93 +4,78 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, MapPin, X } from 'lucide-react';
 import { BottomNav } from '@/components/app/bottom-nav';
-import { Input } from '@/components/ui/input';
+import { DicaCard } from '@/components/app/dica-card';
+import { supabase } from '@/lib/supabase';
+import { cn } from '@/lib/utils';
+import type { DicaCardDica } from '@/components/app/dica-card';
 
-interface SearchResult {
-  id: string;
-  title: string;
-  location: string;
-  category: string;
-  image: string;
+const CATEGORIAS = ['Todos', 'Restaurantes', 'Cafés', 'Bares', 'Cultura', 'Natureza', 'Hotéis', 'Museus', 'Praias', 'Compras'];
+
+function toDicaCard(d: { id: string; titulo: string; imagens: string[]; localizacao: string; categoria: string; curtidas?: number }): DicaCardDica {
+  return {
+    id: d.id,
+    titulo: d.titulo,
+    imagem: Array.isArray(d.imagens) && d.imagens[0] ? d.imagens[0] : '/images/hero1.jpg',
+    localizacao: d.localizacao,
+    categoria: d.categoria,
+    curtidas: d.curtidas,
+  };
 }
-
-const mockResults: SearchResult[] = [
-  {
-    id: '1',
-    title: 'Café da Manhã Perfeito',
-    location: 'Vila Madalena, São Paulo',
-    category: 'Restaurantes',
-    image: '/images/cafe.jpg',
-  },
-  {
-    id: '2',
-    title: 'Hotel Boutique Charmoso',
-    location: 'Copacabana, Rio de Janeiro',
-    category: 'Hotéis',
-    image: '/images/hotel.jpg',
-  },
-  {
-    id: '3',
-    title: 'Museu de Arte Moderna',
-    location: 'Centro, São Paulo',
-    category: 'Museus',
-    image: '/images/museu.jpg',
-  },
-  {
-    id: '4',
-    title: 'Praia Secreta',
-    location: 'Ubatuba, São Paulo',
-    category: 'Praias',
-    image: '/images/praia.jpg',
-  },
-  {
-    id: '5',
-    title: 'Trilha da Pedra',
-    location: 'Parque Nacional, SP',
-    category: 'Natureza',
-    image: '/images/trilha.jpg',
-  },
-];
-
-const categories = ['Todos', 'Restaurantes', 'Hotéis', 'Museus', 'Praias', 'Natureza', 'Compras'];
 
 export default function BuscarPage() {
   const router = useRouter();
   const [query, setQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('Todos');
-  const [isSearching, setIsSearching] = useState(false);
-  const [results, setResults] = useState<SearchResult[]>([]);
+  const [categoria, setCategoria] = useState<string | null>(null);
+  const [resultados, setResultados] = useState<DicaCardDica[]>([]);
+  const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // Auto-focus no input
     inputRef.current?.focus();
   }, []);
 
-  useEffect(() => {
-    // Debounce de busca
-    const timer = setTimeout(() => {
-      if (query.trim()) {
-        setIsSearching(true);
-        // Simular busca
-        setTimeout(() => {
-          const filtered = mockResults.filter(
-            (item) =>
-              (item.title.toLowerCase().includes(query.toLowerCase()) ||
-                item.location.toLowerCase().includes(query.toLowerCase())) &&
-              (selectedCategory === 'Todos' || item.category === selectedCategory)
-          );
-          setResults(filtered);
-          setIsSearching(false);
-        }, 300);
-      } else {
-        setResults([]);
-        setIsSearching(false);
-      }
-    }, 300);
+  async function buscarDicas() {
+    if (query.trim() === '' && !categoria) {
+      setResultados([]);
+      return;
+    }
 
+    setLoading(true);
+    try {
+      let q = supabase
+        .from('dicas')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (query.trim() !== '') {
+        q = q.or(
+          `titulo.ilike.%${query.trim()}%,descricao.ilike.%${query.trim()}%,localizacao.ilike.%${query.trim()}%`
+        );
+      }
+
+      if (categoria) {
+        q = q.eq('categoria', categoria);
+      }
+
+      const { data, error } = await q;
+
+      if (error) throw error;
+      setResultados((data || []).map((d) => toDicaCard({ ...d, imagens: d.imagens || [] })));
+    } catch (err) {
+      console.error('Erro na busca:', err);
+      setResultados([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      buscarDicas();
+    }, 300);
     return () => clearTimeout(timer);
-  }, [query, selectedCategory]);
+  }, [query, categoria]);
 
   const handleClear = () => {
     setQuery('');
@@ -99,10 +84,10 @@ export default function BuscarPage() {
 
   return (
     <main className="min-h-screen bg-background pb-20">
-      {/* Header fixo */}
-      <div className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border px-4 py-3">
+      <div className="sticky top-0 z-50 bg-background border-b border-border p-4">
         <div className="flex items-center gap-3">
           <button
+            type="button"
             onClick={() => router.back()}
             className="p-2 hover:bg-muted rounded-lg transition-colors"
             aria-label="Voltar"
@@ -113,56 +98,48 @@ export default function BuscarPage() {
           </button>
           <div className="relative flex-1">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" strokeWidth={1.5} />
-            <Input
+            <input
               ref={inputRef}
               type="text"
-              placeholder="Buscar lugares, guias ou pessoas"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="pl-11 pr-11"
+              placeholder="Buscar dicas, lugares..."
+              className="w-full rounded-full border border-border bg-card pl-11 pr-11 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             />
             {query && (
               <button
+                type="button"
                 onClick={handleClear}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                aria-label="Limpar busca"
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label="Limpar"
               >
                 <X className="h-5 w-5" strokeWidth={1.5} />
               </button>
             )}
           </div>
         </div>
-      </div>
 
-      {/* Filter Chips */}
-      <div className="px-4 py-3">
-        <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
-          {categories.map((category) => (
+        <div className="flex gap-2 mt-3 overflow-x-auto scrollbar-hide">
+          {CATEGORIAS.map((cat) => (
             <button
-              key={category}
-              onClick={() => setSelectedCategory(category)}
-              className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-                selectedCategory === category
+              key={cat}
+              type="button"
+              onClick={() => setCategoria(cat === 'Todos' ? null : cat)}
+              className={cn(
+                'rounded-full px-4 py-2 text-xs font-medium whitespace-nowrap transition-colors shrink-0',
+                (cat === 'Todos' && !categoria) || categoria === cat
                   ? 'bg-primary text-primary-foreground'
                   : 'border border-border bg-card text-foreground hover:bg-muted'
-              }`}
+              )}
             >
-              {category}
+              {cat}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Resultados */}
-      <div className="px-4 pt-3">
-        {!query.trim() ? (
-          // Empty state
-          <div className="flex flex-col items-center justify-center py-16">
-            <Search className="h-16 w-16 text-muted-foreground mb-4" strokeWidth={1.5} />
-            <p className="text-sm text-muted-foreground">Busque por lugares, guias ou pessoas</p>
-          </div>
-        ) : isSearching ? (
-          // Loading skeleton
+      <div className="p-4">
+        {loading ? (
           <div className="space-y-3">
             {[1, 2, 3].map((i) => (
               <div key={i} className="rounded-2xl border border-border bg-card overflow-hidden animate-pulse">
@@ -174,37 +151,24 @@ export default function BuscarPage() {
               </div>
             ))}
           </div>
-        ) : results.length > 0 ? (
-          // Resultados
-          <div className="space-y-3">
-            {results.map((result) => (
-              <button
-                key={result.id}
-                onClick={() => router.push(`/dica/${result.id}`)}
-                className="w-full rounded-2xl border border-border bg-card overflow-hidden text-left hover:shadow-md transition-shadow"
-              >
-                <div className="h-32 w-full gradient-peach flex items-center justify-center">
-                  <MapPin className="h-8 w-8 text-primary" strokeWidth={1.5} />
-                </div>
-                <div className="p-3">
-                  <h3 className="text-base font-semibold text-foreground mb-1">{result.title}</h3>
-                  <div className="flex items-center gap-2 mb-2">
-                    <MapPin className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
-                    <p className="text-xs text-muted-foreground">{result.location}</p>
-                  </div>
-                  <span className="inline-block rounded-full px-2 py-1 bg-accent/10 text-accent text-xs">
-                    {result.category}
-                  </span>
-                </div>
-              </button>
-            ))}
+        ) : resultados.length === 0 ? (
+          <div className="text-center py-12">
+            <Search className="h-16 w-16 text-muted-foreground mx-auto mb-4" strokeWidth={1.5} />
+            <p className="text-sm text-muted-foreground">
+              {query || categoria ? 'Nenhum resultado encontrado' : 'Digite para buscar'}
+            </p>
           </div>
         ) : (
-          // Sem resultados
-          <div className="flex flex-col items-center justify-center py-16">
-            <Search className="h-16 w-16 text-muted-foreground mb-4" strokeWidth={1.5} />
-            <p className="text-sm text-muted-foreground">Nenhum resultado encontrado</p>
-          </div>
+          <>
+            <p className="text-sm text-muted-foreground mb-4">
+              {resultados.length} resultado{resultados.length !== 1 ? 's' : ''}
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              {resultados.map((dica) => (
+                <DicaCard key={dica.id} dica={dica} variant="grid" />
+              ))}
+            </div>
+          </>
         )}
       </div>
 

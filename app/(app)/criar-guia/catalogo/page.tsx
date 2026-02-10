@@ -6,66 +6,39 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { ArrowLeft, Plus, Check, MapPin } from 'lucide-react';
 import { BottomNav } from '@/components/app/bottom-nav';
+import { useDicas } from '@/lib/hooks/use-supabase';
 import { cn } from '@/lib/utils';
 
 const DICAS_SELECIONADAS_KEY = 'dicas-selecionadas';
 const DICA_NOVA_CRIADA_KEY = 'dica-nova-criada';
 const MAX_DICAS = 20;
 
-function loadDicaNovaCriada(): typeof mockDicas[0] | null {
+type DicaCard = {
+  id: string;
+  titulo: string;
+  localizacao: string;
+  image: string;
+  categoria: string;
+};
+
+function loadDicaNovaCriada(): DicaCard | null {
   if (typeof window === 'undefined') return null;
   try {
     const s = localStorage.getItem(DICA_NOVA_CRIADA_KEY);
-    return s ? JSON.parse(s) : null;
+    if (!s) return null;
+    const raw = JSON.parse(s);
+    const img = Array.isArray(raw.imagens) && raw.imagens[0] ? raw.imagens[0] : '/images/hero1.jpg';
+    return {
+      id: raw.id,
+      titulo: raw.titulo ?? '',
+      localizacao: raw.localizacao ?? '',
+      image: img,
+      categoria: raw.categoria ?? '',
+    };
   } catch {
     return null;
   }
 }
-
-const mockDicas = [
-  {
-    id: '1',
-    titulo: 'Café da Manhã Perfeito',
-    localizacao: 'Vila Madalena, SP',
-    image: '/images/cafe1.jpg',
-    categoria: 'Restaurantes',
-  },
-  {
-    id: '2',
-    titulo: 'Padaria Artesanal',
-    localizacao: 'Pinheiros, SP',
-    image: '/images/padaria.jpg',
-    categoria: 'Restaurantes',
-  },
-  {
-    id: '3',
-    titulo: 'Vista Panorâmica',
-    localizacao: 'Centro, SP',
-    image: '/images/hero1.jpg',
-    categoria: 'Cultura',
-  },
-  {
-    id: '4',
-    titulo: 'Bar com Música Ao Vivo',
-    localizacao: 'Vila Madalena, SP',
-    image: '/images/hero2.jpg',
-    categoria: 'Vida Noturna',
-  },
-  {
-    id: '5',
-    titulo: 'Parque para Piquenique',
-    localizacao: 'Ibirapuera, SP',
-    image: '/images/hero3.jpg',
-    categoria: 'Natureza',
-  },
-  {
-    id: '6',
-    titulo: 'Feira de Artesanato',
-    localizacao: 'Benedito Calixto, SP',
-    image: '/images/guia1.jpg',
-    categoria: 'Compras',
-  },
-];
 
 function loadDicasSelecionadas(): string[] {
   if (typeof window === 'undefined') return [];
@@ -84,10 +57,11 @@ function saveDicasSelecionadas(ids: string[]) {
 
 export default function CatalogoDicasPage() {
   const router = useRouter();
+  const { dicas, loading } = useDicas();
   const [tab, setTab] = useState<'minhas' | 'salvas' | 'explorar'>('minhas');
   const [dicasSelecionadas, setDicasSelecionadas] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
-  const [dicaNova, setDicaNova] = useState<typeof mockDicas[0] | null>(null);
+  const [dicaNova, setDicaNova] = useState<DicaCard | null>(null);
 
   useEffect(() => {
     setDicasSelecionadas(loadDicasSelecionadas());
@@ -115,10 +89,18 @@ export default function CatalogoDicasPage() {
     router.push('/criar-guia/publicar');
   };
 
-  const dicasParaExibir =
+  const dicasFromSupabase: DicaCard[] = dicas.map((d) => ({
+    id: d.id,
+    titulo: d.titulo,
+    localizacao: d.localizacao,
+    image: Array.isArray(d.imagens) && d.imagens[0] ? d.imagens[0] : '/images/hero1.jpg',
+    categoria: d.categoria,
+  }));
+
+  const dicasParaExibir: DicaCard[] =
     tab === 'minhas' && dicaNova
-      ? [dicaNova, ...mockDicas.filter((d) => d.id !== dicaNova.id)]
-      : mockDicas;
+      ? [dicaNova, ...dicasFromSupabase.filter((d) => d.id !== dicaNova.id)]
+      : dicasFromSupabase;
 
   return (
     <main className="min-h-screen bg-background pb-24">
@@ -176,7 +158,12 @@ export default function CatalogoDicasPage() {
       </div>
 
       <div className="px-4 grid grid-cols-2 gap-3 pb-6">
-        {dicasParaExibir.map((dica) => {
+        {loading ? (
+          <div className="col-span-2 py-8 text-center text-sm text-muted-foreground">
+            Carregando dicas...
+          </div>
+        ) : (
+        dicasParaExibir.map((dica) => {
           const selected = dicasSelecionadas.includes(dica.id);
           return (
             <button
@@ -226,7 +213,8 @@ export default function CatalogoDicasPage() {
               </div>
             </button>
           );
-        })}
+        })
+        )}
       </div>
 
       <div

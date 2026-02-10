@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { ArrowLeft, Share, Bookmark, MapPin, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Share, Bookmark, MapPin, ChevronRight, ChevronLeft } from 'lucide-react';
 import { BottomNav } from '@/components/app/bottom-nav';
 import { cn } from '@/lib/utils';
 
@@ -27,6 +27,7 @@ const mockGuia = {
       titulo: 'Café da Manhã Perfeito',
       descricao: 'O melhor café da Vila Madalena.',
       imagem: '/images/cafe1.jpg',
+      imagens: ['/images/cafe1.jpg', '/images/hero2.jpg'],
       localizacao: 'Vila Madalena, SP',
       categoria: 'Restaurantes',
     },
@@ -35,6 +36,7 @@ const mockGuia = {
       titulo: 'Padaria Artesanal',
       descricao: 'Pães e doces incríveis.',
       imagem: '/images/padaria.jpg',
+      imagens: ['/images/padaria.jpg'],
       localizacao: 'Pinheiros, SP',
       categoria: 'Restaurantes',
     },
@@ -43,6 +45,7 @@ const mockGuia = {
       titulo: 'Vista Panorâmica',
       descricao: 'Mirante com vista 360°.',
       imagem: '/images/hero1.jpg',
+      imagens: ['/images/hero1.jpg', '/images/guia1.jpg'],
       localizacao: 'Centro, SP',
       categoria: 'Cultura',
     },
@@ -52,64 +55,112 @@ const mockGuia = {
 };
 
 export default function GuiaSelecionadoPage() {
+  const todasImagens = [
+    mockGuia.capa,
+    ...mockGuia.dicas.flatMap((d) =>
+      'imagens' in d && Array.isArray(d.imagens) ? d.imagens : [d.imagem]
+    ),
+  ];
   const router = useRouter();
-  const params = useParams();
   const [saved, setSaved] = useState(mockGuia.saved);
   const [descExpanded, setDescExpanded] = useState(false);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const DESC_LIMIT = 200;
   const descLong = mockGuia.descricao.length > DESC_LIMIT;
 
   return (
     <main className="min-h-screen bg-background pb-20">
-      {/* Header sobre capa */}
-      <header className="absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-foreground/60 to-transparent px-4 py-4 pt-[env(safe-area-inset-top)]">
-        <div className="flex items-center justify-between">
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="p-2 -ml-2 rounded-full hover:bg-white/20 transition-colors text-primary-foreground"
-            aria-label="Voltar"
-          >
-            <ArrowLeft className="h-6 w-6" strokeWidth={1.5} />
-          </button>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="p-2 rounded-full hover:bg-white/20 transition-colors text-primary-foreground"
-              aria-label="Compartilhar"
-            >
-              <Share className="h-6 w-6" strokeWidth={1.5} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setSaved(!saved)}
-              className={cn(
-                'p-2 rounded-full transition-colors text-primary-foreground',
-                saved ? 'bg-white/20' : 'hover:bg-white/20'
-              )}
-              aria-label={saved ? 'Remover dos salvos' : 'Salvar'}
-            >
-              <Bookmark
-                className="h-6 w-6"
-                strokeWidth={1.5}
-                fill={saved ? 'currentColor' : 'none'}
-              />
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Capa */}
-      <div className="relative aspect-[16/9] w-full overflow-hidden">
+      {/* Carousel de imagens */}
+      <div className="relative aspect-[16/9] w-full bg-muted">
         <Image
-          src={mockGuia.capa}
+          src={todasImagens[currentImageIndex] ?? mockGuia.capa}
           alt={mockGuia.titulo}
           fill
           className="object-cover"
           priority
           sizes="100vw"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-foreground/50 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-b from-foreground/60 via-transparent to-foreground/40" />
+
+        {/* Header sobre a imagem */}
+        <div className="absolute top-0 left-0 right-0 z-10 px-4 py-4 pt-[env(safe-area-inset-top)]">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => router.back()}
+              className="p-2 -ml-2 rounded-full bg-background/80 backdrop-blur-md hover:bg-background transition-colors"
+              aria-label="Voltar"
+            >
+              <ArrowLeft className="h-6 w-6 text-primary" strokeWidth={1.5} />
+            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="p-2 rounded-full bg-background/80 backdrop-blur-md hover:bg-background transition-colors"
+                aria-label="Compartilhar"
+              >
+                <Share className="h-6 w-6 text-primary" strokeWidth={1.5} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setSaved(!saved)}
+                className={cn(
+                  'p-2 rounded-full bg-background/80 backdrop-blur-md hover:bg-background transition-colors',
+                  saved && 'bg-accent/20'
+                )}
+                aria-label={saved ? 'Remover dos salvos' : 'Salvar'}
+              >
+                <Bookmark
+                  className="h-6 w-6 text-primary"
+                  strokeWidth={1.5}
+                  fill={saved ? 'currentColor' : 'none'}
+                />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Navegação do carousel */}
+        {todasImagens.length > 1 && (
+          <>
+            {currentImageIndex > 0 && (
+              <button
+                type="button"
+                onClick={() => setCurrentImageIndex((prev) => prev - 1)}
+                className="absolute left-4 top-1/2 -translate-y-1/2 p-2 rounded-full bg-background/80 backdrop-blur-md hover:bg-background transition-colors z-10"
+                aria-label="Imagem anterior"
+              >
+                <ChevronLeft className="h-6 w-6 text-primary" strokeWidth={1.5} />
+              </button>
+            )}
+            {currentImageIndex < todasImagens.length - 1 && (
+              <button
+                type="button"
+                onClick={() => setCurrentImageIndex((prev) => prev + 1)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 p-2 rounded-full bg-background/80 backdrop-blur-md hover:bg-background transition-colors z-10"
+                aria-label="Próxima imagem"
+              >
+                <ChevronRight className="h-6 w-6 text-primary" strokeWidth={1.5} />
+              </button>
+            )}
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 z-10">
+              {todasImagens.map((_, index) => (
+                <button
+                  key={index}
+                  type="button"
+                  onClick={() => setCurrentImageIndex(index)}
+                  className={cn(
+                    'h-2 rounded-full transition-all',
+                    index === currentImageIndex
+                      ? 'w-6 bg-primary-foreground'
+                      : 'w-2 bg-primary-foreground/50'
+                  )}
+                  aria-label={`Imagem ${index + 1}`}
+                />
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="px-4 space-y-6 -mt-2 pt-4 rounded-t-2xl bg-background relative">
